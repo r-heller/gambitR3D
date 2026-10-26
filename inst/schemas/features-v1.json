@@ -1,0 +1,91 @@
+{
+  "schema": "g3-features/1",
+  "rules_profile": "experimental-v0.1",
+  "action_schema": "g3-action/1",
+  "encoder": "R function .g3_encode_core() is the only implementation; the worker never derives features",
+  "integer_only": "every feature is an integer; numeric slots are divided by their divisor inside the model",
+  "tokens": {
+    "count": 72,
+    "order": "64 physical squares in canonical order W, N, B, WQ, WK, BQ, BK, each board in local v then u order (square index 1..64, token position index - 1); then 7 board tokens W, N, B, WQ, WK, BQ, BK (positions 64..70); then 1 global token (position 71)",
+    "square_positions": [0, 63],
+    "board_positions": [64, 70],
+    "global_position": 71
+  },
+  "token_categorical": [
+    {"name": "token_type", "vocab": 4, "applies": "all", "values": "1 square, 2 board, 3 global"},
+    {"name": "square", "vocab": 65, "applies": "square", "values": "physical square index 1..64"},
+    {"name": "board", "vocab": 8, "applies": "square,board", "values": "board 1..7 in order W, N, B, WQ, WK, BQ, BK"},
+    {"name": "piece", "vocab": 14, "applies": "square", "values": "1 empty; 2..7 white P, N, B, R, Q, K; 8..13 black P, N, B, R, Q, K"},
+    {"name": "promoted", "vocab": 3, "applies": "occupied square", "values": "1 original type, 2 promoted pawn (origin_type P)"},
+    {"name": "has_moved", "vocab": 3, "applies": "occupied square", "values": "1 not moved, 2 moved"},
+    {"name": "local_u", "vocab": 5, "applies": "square", "values": "zero-based local u plus 1"},
+    {"name": "local_v", "vocab": 5, "applies": "square", "values": "zero-based local v plus 1"},
+    {"name": "file", "vocab": 7, "applies": "square", "values": "current logical file 0..5 plus 1"},
+    {"name": "rank", "vocab": 11, "applies": "square", "values": "current logical rank 0..9 plus 1"},
+    {"name": "parent", "vocab": 16, "applies": "square,board", "values": "1..3 fixed main board W, N, B; 3 + dock index 1..12 (profile adjacency order) for platforms"},
+    {"name": "orientation", "vocab": 3, "applies": "square,board", "values": "1 orientation 0, 2 orientation 180 (main boards always 1)"},
+    {"name": "coord_squares", "vocab": 6, "applies": "square", "values": "number of physical squares projected to this logical coordinate, capped at 5"},
+    {"name": "coord_occupants", "vocab": 6, "applies": "square", "values": "1 + occupied physical squares at this logical coordinate, capped at 5"},
+    {"name": "en_passant", "vocab": 4, "applies": "square", "values": "1 none, 2 en-passant victim, 3 square at the crossed (capture) coordinate"},
+    {"name": "board_kind", "vocab": 3, "applies": "board", "values": "1 main, 2 platform"},
+    {"name": "occupants", "vocab": 18, "applies": "board", "values": "1 + pieces on the board (0..16)"},
+    {"name": "controller", "vocab": 4, "applies": "board", "values": "1 none (main board, empty or several occupants), 2 single white occupant, 3 single black occupant"},
+    {"name": "side", "vocab": 3, "applies": "global", "values": "1 white to act, 2 black to act"},
+    {"name": "castle_white_kingside", "vocab": 3, "applies": "global", "values": "1 no, 2 yes"},
+    {"name": "castle_white_queenside", "vocab": 3, "applies": "global", "values": "1 no, 2 yes"},
+    {"name": "castle_black_kingside", "vocab": 3, "applies": "global", "values": "1 no, 2 yes"},
+    {"name": "castle_black_queenside", "vocab": 3, "applies": "global", "values": "1 no, 2 yes"},
+    {"name": "first_turn_white", "vocab": 3, "applies": "global", "values": "1 not completed, 2 completed"},
+    {"name": "first_turn_black", "vocab": 3, "applies": "global", "values": "1 not completed, 2 completed"},
+    {"name": "ep_file", "vocab": 8, "applies": "global", "values": "1 none, otherwise crossed file 0..5 plus 2"},
+    {"name": "ep_rank", "vocab": 12, "applies": "global", "values": "1 none, otherwise crossed rank 0..9 plus 2"},
+    {"name": "ep_effective", "vocab": 3, "applies": "global", "values": "1 no usable en-passant capture, 2 usable"},
+    {"name": "repetition", "vocab": 4, "applies": "global", "values": "occurrences of the current position key in the repetition record, capped at 3 (lossy summary)"}
+  ],
+  "token_numeric": [
+    {"name": "file_scaled", "divisor": 5, "applies": "square", "values": "logical file 0..5"},
+    {"name": "rank_scaled", "divisor": 9, "applies": "square", "values": "logical rank 0..9"},
+    {"name": "occupants_scaled", "divisor": 16, "applies": "board", "values": "pieces on the board 0..16"},
+    {"name": "halfmove_scaled", "divisor": 100, "applies": "global", "values": "halfmove rule counter capped at 100"},
+    {"name": "repetition_record_scaled", "divisor": 100, "applies": "global", "values": "length of the repetition record capped at 100 (lossy summary)"}
+  ],
+  "candidate_categorical": [
+    {"name": "action_type", "vocab": 4, "values": "1 move, 2 platform, 3 castle"},
+    {"name": "source", "vocab": 65, "values": "physical square of the moving piece (carried piece; king for castling)"},
+    {"name": "destination", "vocab": 65, "values": "physical destination square; for a platform action the carried piece's own square, whose identity is unchanged"},
+    {"name": "piece", "vocab": 14, "values": "moving piece, coded as token piece"},
+    {"name": "captured", "vocab": 14, "values": "1 none, otherwise captured piece coded as token piece"},
+    {"name": "promotion", "vocab": 6, "values": "1 none; 2 N, 3 B, 4 R, 5 Q"},
+    {"name": "platform", "vocab": 6, "values": "1 none; 2..5 WQ, WK, BQ, BK"},
+    {"name": "from_dock", "vocab": 14, "values": "1 none, otherwise current dock index plus 1"},
+    {"name": "to_dock", "vocab": 14, "values": "1 none, otherwise destination dock index plus 1"},
+    {"name": "rotation", "vocab": 4, "values": "1 none, 2 rotation delta 0, 3 rotation delta 180"},
+    {"name": "result_orientation", "vocab": 4, "values": "1 none, 2 resulting orientation 0, 3 resulting orientation 180"},
+    {"name": "castle_side", "vocab": 4, "values": "1 none, 2 kingside, 3 queenside"},
+    {"name": "special", "vocab": 4, "values": "1 none, 2 pawn double step, 3 en passant"},
+    {"name": "result_file", "vocab": 7, "values": "logical file of the moving or carried piece after the action plus 1 (computed by R)"},
+    {"name": "result_rank", "vocab": 11, "values": "logical rank of the moving or carried piece after the action plus 1 (computed by R)"},
+    {"name": "destination_board", "vocab": 8, "values": "board 1..7 of the destination physical square"},
+    {"name": "rook_source", "vocab": 65, "values": "castling rook source square, 0 otherwise"},
+    {"name": "rook_destination", "vocab": 65, "values": "castling rook destination square, 0 otherwise"}
+  ],
+  "candidate_numeric": [
+    {"name": "file_displacement", "divisor": 5, "values": "signed logical file change of the moving or carried piece"},
+    {"name": "rank_displacement", "divisor": 9, "values": "signed logical rank change of the moving or carried piece"}
+  ],
+  "candidates": {
+    "order": "canonical legal-action order of the R engine (sorted by action id)",
+    "truncation": "never; batches pad to the largest candidate count with a boolean mask",
+    "digest": "SHA-256 of the action ids joined by a newline character",
+    "gather": "the scorer gathers contextual embeddings at token positions source - 1, destination - 1 and 63 + destination_board, plus the global token and the mean of all tokens"
+  },
+  "outputs": {
+    "logits": "one logit per real candidate, in candidate order",
+    "wdl": "three logits in the order win, draw, loss from the side to act",
+    "value": "p_win - p_loss in [-1, 1] from the side to act",
+    "expected_score": "p_win + 0.5 * p_draw in [0, 1] from the side to act",
+    "aux_heuristic": "separately named auxiliary scalar (tanh) trained on normalised search heuristics; not calibrated WDL"
+  },
+  "excluded": ["neutral_height", "view_2d_3d", "camera", "colours", "selected_square", "piece_ids", "ply", "wall_clock"],
+  "lossy": "repetition and repetition_record_scaled summarise the history; exact draw adjudication stays with the R engine"
+}

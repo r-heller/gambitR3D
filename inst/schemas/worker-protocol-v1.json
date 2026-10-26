@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gambitR3D/worker-protocol-v1",
+  "title": "gambitR3D tensor worker protocol 1.0",
+  "description": "Newline-delimited JSON over the worker's stdin (requests) and stdout (replies). One JSON object per line, at most 8 MiB per line (UTF-8 bytes, newline excluded). Logs go to stderr and are never parsed. Non-finite numbers (NaN, Infinity) are invalid JSON and are rejected in both directions. The worker never implements game rules and never returns a board state: R sends encoded positions (schema g3-features/1) with their canonical legal candidates and validates every reply. One request is in flight at a time; cancel and shutdown may arrive while a request runs and are honoured between training steps.",
+  "type": "object",
+  "required": ["protocol_version", "message_type", "request_id", "operation", "payload"],
+  "properties": {
+    "protocol_version": {"type": "string", "pattern": "^1(\\.[0-9]+)?$", "description": "Major version 1; any other major version is refused before work starts."},
+    "message_type": {"enum": ["request", "accepted", "progress", "heartbeat", "result", "error", "cancelled"]},
+    "request_id": {"type": ["string", "null"], "maxLength": 200, "description": "Unique per request; null only on heartbeats and on errors about a line that could not be parsed."},
+    "job_id": {"type": ["string", "null"]},
+    "attempt_id": {"type": ["string", "null"]},
+    "operation": {"enum": ["hello", "initialize_model", "infer_batch", "train_chunk", "save_checkpoint", "load_checkpoint", "cancel", "shutdown", "debug_fault", null]},
+    "state_hash": {"type": ["string", "null"], "description": "Full-state checksum of the position, when one position is concerned."},
+    "rules_hash": {"type": ["string", "null"], "description": "Rules-profile hash; fixed for the session at hello and checked on every later request and checkpoint."},
+    "feature_schema_hash": {"type": ["string", "null"], "description": "SHA-256 of the canonical JSON of schemas/features-v1.json, computed independently by R and the worker."},
+    "action_schema_hash": {"type": ["string", "null"], "description": "SHA-256 of the action schema id 'g3-action/1'."},
+    "model_hash": {"type": ["string", "null"], "description": "Weights digest the client expects to be loaded (infer_batch, train_chunk, save_checkpoint)."},
+    "budget": {"type": ["object", "null"]},
+    "deadline": {"type": ["number", "null"], "description": "Unix time in seconds; an expired deadline is refused, a deadline reached during training stops it cleanly."},
+    "payload": {"type": "object"}
+  },
+  "echo": "Every reply to a request (accepted, progress, result, error, cancelled) repeats request_id, job_id, attempt_id, operation, state_hash, rules_hash, feature_schema_hash, action_schema_hash, model_hash, budget and deadline exactly. R stops a worker whose reply does not echo them; replies for unknown or already finished requests are rejected and counted (stale, duplicate).",
+  "liveness": {
+    "heartbeat_seconds": 2,
+    "stale_after_seconds": 15,
+    "cancel_grace_seconds": 5,
+    "rules": "The worker sends a heartbeat every 2 s. A client that hears nothing for the stale threshold kills the worker. A cancel that is not acknowledged by a terminal reply within the grace period ends in killing the process tree."
+  },
+  "operations": {
+    "hello": {
+      "request": {"client": "string", "client_feature_schema_hash": "string"},
+      "result": {"worker_version": "string", "protocol_version": "1.0", "supported_protocol_major": [1], "operations": "array", "python": "string", "torch": "string", "numpy": "string", "safetensors": "string", "device": "cpu", "cuda_available": "boolean", "dtypes": ["float32"], "threads": "integer", "deterministic_algorithms": "boolean", "feature_schema": "g3-features/1", "feature_schema_hash": "string", "max_line_bytes": 8388608, "heartbeat_seconds": 2, "pid": "integer", "fault_injection": "boolean"},
+      "errors": ["hash_mismatch (feature schema differs: stale worker)", "invalid_request (no rules_hash)"]
+    },
+    "initialize_model": {
+      "request": {"model_config": {"profile": "tiny | research | custom", "width": "integer", "layers": "integer", "heads": "integer", "mlp_ratio": "integer", "dropout": "number"}, "seed": "integer"},
+      "result": {"model_config": "object", "parameter_count": "integer (measured after instantiation)", "parameter_groups": "object", "weights_digest": "string", "step": 0, "cursor": {"epoch": 0, "offset": 0}, "dtype": "float32", "device": "cpu"}
+    },
+    "infer_batch": {
+      "request": {"positions": [{"tokens_cat": "[72][29] int", "tokens_num": "[72][5] int", "cand_cat": "[A][18] int", "cand_num": "[A][2] int", "candidate_ids": "[A] string, canonical order", "candidate_digest": "SHA-256 of candidate_ids joined by a newline"}]},
+      "result": {"outputs": [{"candidate_digest": "echo", "n_candidates": "A", "logits": "[A] number", "wdl_logits": "[3] number (win, draw, loss; side to act)", "wdl": "[3] probabilities", "value": "p_win - p_loss", "expected_score": "p_win + 0.5 * p_draw", "aux_heuristic": "number"}], "weights_digest": "string", "seconds": "number"},
+      "errors": ["digest_mismatch", "invalid_features (value outside a vocabulary)", "invalid_request (shape, non-integer, empty candidate set)", "nonfinite_output", "hash_mismatch (model_hash)"],
+      "client_checks": "R re-checks the digest, the number of logits, finiteness, forms probabilities over the complete legal set itself and maps them to action ids. Padding is internal to the worker."
+    },
+    "train_chunk": {
+      "request": {"dataset": {"manifest_path": "string inside an allowed root", "manifest_sha256": "string", "split": "train"}, "steps": "integer >= 0", "batch_size": "integer", "optimizer": {"lr": "number", "weight_decay": "number", "betas": "[2] number", "eps": "number"}, "schedule": {"kind": "cosine | constant", "warmup_steps": "integer", "total_steps": "integer", "min_lr_ratio": "number"}, "loss_weights": {"policy": "number", "wdl": "number", "aux": "number"}, "clip_norm": "number", "seed": "integer", "evaluate": "[split names]"},
+      "progress": {"step": "integer", "of": "integer", "metrics": {"step": "integer", "loss": "number", "policy_loss": "number", "wdl_loss": "number", "aux_loss": "number", "grad_norm": "number (before clipping)", "lr": "number", "n_positions": "integer", "n_policy": "integer", "n_wdl": "integer (verified terminal outcomes only)", "n_aux": "integer", "policy_entropy": "number", "top1_agreement": "number", "params_with_gradient": "integer", "seconds": "number"}},
+      "result": {"stop_reason": "completed | cancelled | deadline", "steps_completed": "integer", "step": "integer", "cursor": {"epoch": "integer", "offset": "integer"}, "metrics": "array", "weights_digest_before": "string", "weights_digest_after": "string", "weights_changed": "boolean", "elapsed_seconds": "number", "positions_per_second": "number", "evaluation": "object per split", "dataset_manifest_sha256": "string"},
+      "cancelled": "Same payload with stop_reason cancelled and the steps completed so far.",
+      "errors": ["path_not_allowed", "artifact_hash_mismatch", "non_finite_loss", "non_finite_gradient", "optimizer_config_mismatch", "nonfinite_value (shard)"]
+    },
+    "save_checkpoint": {
+      "request": {"parent": "directory inside an allowed root", "name": "new directory name", "extra": "object"},
+      "result": {"path": "string", "step": "integer", "weights_digest": "string", "files": {"weights.safetensors": "sha256", "optimizer.safetensors": "sha256", "checkpoint.json": "sha256"}},
+      "atomicity": "Files are written into a temporary sibling directory, flushed with fsync, hashed, and the directory is renamed into place; R then re-hashes them and writes model.json last."
+    },
+    "load_checkpoint": {
+      "request": {"path": "directory inside an allowed root", "expected": {"weights.safetensors": "sha256", "checkpoint.json": "sha256", "optimizer.safetensors": "sha256"}, "with_optimizer": "boolean"},
+      "result": {"model_config": "object", "parameter_count": "integer", "weights_digest": "string", "step": "integer", "cursor": "object", "checkpoint_sha256": "string", "rules_hash": "string", "optimizer_restored": "boolean"},
+      "safety": "Only safetensors and JSON are read; hashes are verified on the bytes before deserialisation; no pickle loader is ever called; only the AdamW optimizer structure is reconstructed."
+    },
+    "cancel": {"request": {"target_request_id": "string"}, "result": {"target_request_id": "string", "accepted": "boolean", "reason": "not_active when nothing matching was running"}},
+    "shutdown": {"request": {}, "result": {"stopped": true}},
+    "debug_fault": {"request": {"kind": "malformed_line | crash | nonfinite | wrong_echo | duplicate_result | stale_response | hang", "seconds": "number"}, "availability": "Refused unless the worker was started with --enable-fault-injection (tests only)."}
+  },
+  "error_payload": {"code": "string", "message": "string"},
+  "worker_level_errors": ["malformed_json", "nonfinite_value", "oversized_line", "unsupported_protocol", "unknown_operation", "invalid_request", "hash_mismatch", "deadline_exceeded", "model_not_initialized", "internal_error"]
+}

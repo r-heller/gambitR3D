@@ -1,0 +1,7 @@
+# Optional CPU-only runtime for the gambitR3D tensor worker.
+# Resolved and hashed into requirements-cpu.lock (see g3_setup_ml()).
+# torch comes from the official PyTorch CPU wheel index, so no CUDA
+# libraries are installed.
+torch>=2.4,<3
+numpy>=1.26,<3
+safetensors>=0.4,<1

@@ -1,0 +1,157 @@
+{
+  "schema": "g3-model-registry/1",
+  "evidence_date": "2026-10-26",
+  "note": "Built-in entries only. No weights are shipped. Hugging Face entries are research references recorded from their public model cards; nothing was downloaded, and none of them can play this game.",
+  "models": [
+    {
+      "schema": "g3-model-manifest/1",
+      "model_id": "builtin-search",
+      "display_name": "Alpha-beta search (model-free)",
+      "kind": "search",
+      "backend": "r-search",
+      "architecture": {"name": "alpha-beta", "version": "g3-search/1", "evaluator": "g3-eval/1"},
+      "action_schema": "g3-action/1",
+      "rules": {"version": "experimental-v0.1", "hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98"},
+      "tasks": ["play", "analysis", "legal_action_scoring", "explanation"],
+      "value_only": false,
+      "resources": {"device": "cpu", "python": false},
+      "license": {"declared": "MIT (project licence)", "evidence": "LICENSE in this package", "status": "project_code"},
+      "provenance": {"status": "accepted", "source": "implemented in this package (R and compiled backend)", "external_weights": "none", "training_data": "none", "run_id": "none", "seed": "deterministic"},
+      "status": "available",
+      "limitations": ["Heuristic evaluation in provisional units, not centipawns", "Strength is bounded by the node budget; no strength rating is claimed"]
+    },
+    {
+      "schema": "g3-model-manifest/1",
+      "model_id": "builtin-square-transformer",
+      "display_name": "Square-token policy/value transformer (untrained architecture)",
+      "kind": "architecture",
+      "backend": "python-pytorch-worker",
+      "architecture": {
+        "name": "square-transformer",
+        "version": "g3-square-transformer/1",
+        "profiles": {
+          "tiny": {"width": 64, "layers": 2, "heads": 4, "mlp_ratio": 4, "dropout": 0},
+          "research": {"width": 256, "layers": 6, "heads": 8, "mlp_ratio": 4, "dropout": 0.1}
+        },
+        "parameter_count": "computed after instantiation by the worker",
+        "heads": ["shared candidate MLP over the full legal set", "WDL (side to act; win, draw, loss)", "auxiliary heuristic (separately named)"]
+      },
+      "input_schema": {"feature_schema": "g3-features/1", "feature_schema_hash": "6d5ec66d574551ce813431069a867511021ad7ac587d3619a2ed8e30559cd6ee"},
+      "action_schema": "g3-action/1",
+      "rules": {"version": "experimental-v0.1", "hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98"},
+      "tasks": ["training", "self_play_training"],
+      "trainable": true,
+      "initial_weights": "random, seeded per run",
+      "value_only": false,
+      "resources": {"device": "cpu", "python": true, "note": "tiny trains on CPU; research needs an explicit job budget"},
+      "license": {"declared": "MIT (project licence)", "evidence": "LICENSE in this package", "status": "project_code"},
+      "provenance": {"status": "accepted", "source": "independently implemented in this package", "external_weights": "none", "training_data": "none (untrained)", "run_id": "none", "seed": "per run"},
+      "status": "architecture_only_untrained",
+      "limitations": ["Untrained: no policy or value until a checkpoint is trained with g3_train_model()", "A short run demonstrates the pipeline, not playing strength"]
+    },
+    {
+      "schema": "g3-model-manifest/1",
+      "model_id": "amanm10000/chess-policy-net",
+      "display_name": "chess-policy-net (conventional chess; reference only)",
+      "kind": "reference_candidate",
+      "backend": "none",
+      "role": "policy_value_architecture_reference",
+      "source": {
+        "repository": "https://huggingface.co/amanm10000/chess-policy-net",
+        "artifacts": "https://huggingface.co/amanm10000/chess-policy-net/tree/main",
+        "source_code": "https://github.com/amanmprojects/chess-bot",
+        "revision": null,
+        "artifact_sha256": null,
+        "downloaded": false
+      },
+      "evidence_date": "2026-10-26",
+      "reported": {
+        "parameters": 5580000,
+        "architecture": "PyTorch policy/value transformer, 7 blocks, width 256, 8 heads; 64 square tokens plus 3 auxiliary tokens; 4,672-slot conventional chess policy; scalar value head",
+        "artifact_formats": ["model definition", "feature encoder", "PyTorch checkpoint with optimizer state", "ONNX"],
+        "note": "author-reported on the model card; not independently verified"
+      },
+      "license": {"declared": "MIT", "evidence": "model-card declaration; no standalone licence file was visible in the Hugging Face or GitHub root listings at the evidence date", "status": "unresolved"},
+      "training_data": "Lichess January 2023 games (author statement)",
+      "action_schema": "uci-4672 (incompatible)",
+      "rules": {"version": "conventional chess", "hash": null},
+      "tasks": [],
+      "reference_tasks": ["conventional_chess_policy", "conventional_chess_value"],
+      "value_only": false,
+      "adapter": {"status": "unavailable", "reason": "Its 8x8 inputs and fixed 4,672-slot UCI policy cannot represent platforms, cross-level squares or transport actions; an adapter needs new input features, a legal-candidate scorer, value retraining, a reviewed conversion from the pickle-based .pt checkpoint, and pinned revision and licence evidence. None of this exists."},
+      "required_changes": ["input_features", "action_scorer", "value_retraining", "rules_compatibility"],
+      "provenance": {"status": "unresolved", "source": "public model card", "external_weights": "not downloaded", "training_data": "Lichess January 2023 (author statement)", "run_id": "none", "seed": "unknown"},
+      "status": "adaptation_required",
+      "limitations": ["Conventional chess only", "Card acknowledges no tactical lookahead and a weak value head", "Reported strength does not transfer to this variant"]
+    },
+    {
+      "schema": "g3-model-manifest/1",
+      "model_id": "mateuszgrzyb/searchless-chess-vit-medium",
+      "display_name": "searchless-chess ViT medium (conventional chess value model; reference only)",
+      "kind": "reference_candidate",
+      "backend": "none",
+      "role": "value_network_comparison",
+      "source": {
+        "repository": "https://huggingface.co/mateuszgrzyb/searchless-chess-vit-medium",
+        "source_code": "https://github.com/mateuszgrzyb-pl/searchless-chess",
+        "license_text": "https://github.com/mateuszgrzyb-pl/searchless-chess/blob/main/LICENSE",
+        "revision": null,
+        "artifact_sha256": null,
+        "downloaded": false
+      },
+      "evidence_date": "2026-10-26",
+      "reported": {
+        "parameters": 9500000,
+        "architecture": "Keras Vision Transformer, one square per patch, width 384, 8 layers, 6 heads; position value output",
+        "artifact_formats": ["complete Keras model", "separate weight files"],
+        "note": "author-reported; the approximately 1960 'Elo' figure is inferred from puzzle performance, not a match rating"
+      },
+      "license": {"declared": "MIT", "evidence": "model-card declaration and an MIT licence file in the source repository", "status": "declared_not_cleared"},
+      "training_data": "Lichess/Stockfish position evaluations (author statement)",
+      "action_schema": "none (value only)",
+      "rules": {"version": "conventional chess", "hash": null},
+      "tasks": [],
+      "reference_tasks": ["conventional_chess_value"],
+      "value_only": true,
+      "adapter": {"status": "unavailable", "reason": "Value-only model: it has no legal-action policy, and its 8x8 input geometry cannot encode platforms or overlapping coordinates. A value adapter would need new input features, value retraining on outcomes from this rules profile, a Keras-to-safetensors conversion route and pinned revision evidence. None of this exists."},
+      "required_changes": ["input_geometry", "value_retraining", "rules_compatibility"],
+      "provenance": {"status": "unresolved", "source": "public model card", "external_weights": "not downloaded", "training_data": "Lichess/Stockfish evaluations (author statement)", "run_id": "none", "seed": "unknown"},
+      "status": "adaptation_required",
+      "limitations": ["Value only: cannot choose actions by itself", "Conventional chess only", "Puzzle-derived rating is not a playing rating and does not transfer"]
+    },
+    {
+      "schema": "g3-model-manifest/1",
+      "model_id": "Jotellechea/chess-transformer",
+      "display_name": "chess-transformer GPT move-sequence models (reference only)",
+      "kind": "reference_candidate",
+      "backend": "none",
+      "role": "move_sequence_research_comparison",
+      "source": {
+        "repository": "https://huggingface.co/Jotellechea/chess-transformer",
+        "source_code": "https://github.com/JOTELLECHEA/chess-transformer",
+        "revision": null,
+        "artifact_sha256": null,
+        "downloaded": false
+      },
+      "evidence_date": "2026-10-26",
+      "reported": {
+        "parameters": [5000000, 22000000],
+        "architecture": "GPT-style move-history models predicting UCI move tokens from a closed 1,973-token vocabulary; needs the repository's own classes (not transformers AutoModel)",
+        "artifact_formats": ["safetensors checkpoints", "training scripts", "evaluation code"],
+        "note": "author-reported; the largest checkpoint generates fully legal games only about half the time under its own evaluation"
+      },
+      "license": {"declared": "MIT (code); CC0 Lichess data", "evidence": "model-card declaration and an MIT licence file in the source repository", "status": "declared_not_cleared"},
+      "training_data": "Lichess games (CC0, author statement)",
+      "action_schema": "uci-token-1973 (incompatible)",
+      "rules": {"version": "conventional chess", "hash": null},
+      "tasks": [],
+      "reference_tasks": ["conventional_chess_move_sequence"],
+      "value_only": false,
+      "adapter": {"status": "unavailable", "reason": "Its UCI move vocabulary cannot express platform relocation or rotation, and it infers state from move history instead of reading the position; replacing the vocabulary and state encoding amounts to a new model. No adapter exists."},
+      "required_changes": ["action_vocabulary", "state_history_encoding", "retraining", "legal_action_interface"],
+      "provenance": {"status": "unresolved", "source": "public model card", "external_weights": "not downloaded", "training_data": "Lichess games (author statement)", "run_id": "none", "seed": "unknown"},
+      "status": "adaptation_required",
+      "limitations": ["Sequence model without a legal-action interface", "Conventional chess only", "Legality of generated moves is not guaranteed"]
+    }
+  ]
+}
