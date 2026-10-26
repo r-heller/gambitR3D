@@ -189,8 +189,68 @@
 # completed depth, per-root-action scores of the last completed iteration
 # with bound type, node count and elapsed time. With `exact_alternatives`,
 # every root action is searched with a full window (exact scores).
+#
+# Two backends give identical results: the compiled port (src/engine.cpp,
+# the default) and the R reference below, selected with
+# options(gambitR3D.engine = "r"). Tests compare them position by position.
 #' @noRd
 .g3_root_search <- function(core, tabs, budget, exact_alternatives = FALSE, restrict = NULL) {
+  if (!identical(.g3_engine(), "cpp")) {
+    return(.g3_root_search_r(core, tabs, budget, exact_alternatives, restrict))
+  }
+  legal <- .g3_legal(core, tabs)
+  ids <- .g3_action_ids(core, legal, tabs)
+  if (!is.null(restrict)) {
+    keep <- ids %in% restrict
+    legal <- legal[keep, , drop = FALSE]
+    ids <- ids[keep]
+  }
+  r <- .g3_cpp_root_search(
+    .g3_cpp_ptr(), .g3_cpp_core(core), budget$nodes, budget$time_ms, budget$depth,
+    exact_alternatives, restrict, getOption("gambitR3D.stop_check")
+  )
+  list(legal = legal, ids = ids, depth = r$depth, best = r$best, scores = r$scores,
+       bounds = r$bounds, status = r$status, nodes = r$nodes, elapsed = r$elapsed, pv = r$pv)
+}
+
+# Which search backend to use: "cpp" (default when compiled) or "r".
+#' @noRd
+.g3_engine <- function() {
+  e <- getOption("gambitR3D.engine", "cpp")
+  if (identical(e, "cpp") && !is.loaded("_gambitR3D_g3_cpp_root_search")) "r" else e
+}
+
+# Engine tables for the compiled backend, built once per session.
+#' @noRd
+.g3_cpp_ptr <- function() {
+  p <- .g3_env$cpp_ptr
+  if (is.null(p) || !.g3_cpp_ptr_valid(p)) {
+    p <- .g3_cpp_tables(.g3_tables())
+    .g3_env$cpp_ptr <- p
+  }
+  p
+}
+
+# The core with integer and logical storage the compiled code expects.
+#' @noRd
+.g3_cpp_core <- function(core) {
+  core$occ <- as.integer(core$occ)
+  core$ptype <- as.integer(core$ptype)
+  core$porigin <- as.integer(core$porigin)
+  core$pcolor <- as.integer(core$pcolor)
+  core$psq <- as.integer(core$psq)
+  core$dock <- as.integer(core$dock)
+  core$orient <- as.integer(core$orient)
+  core$ep <- as.integer(core$ep)
+  core$side <- as.integer(core$side)
+  core$halfmove <- as.integer(core$halfmove)
+  core$ply <- as.integer(core$ply)
+  core
+}
+
+# Reference implementation in R.
+#' @noRd
+.g3_root_search_r <- function(core, tabs, budget, exact_alternatives = FALSE, restrict = NULL) {
   e <- .g3_search_env(budget, tabs)
   ctx <- .g3_ctx(core, tabs)
   legal <- .g3_legal(core, tabs, ctx)

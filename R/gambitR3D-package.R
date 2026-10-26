@@ -14,4 +14,6 @@
 #' `vignette("rules", package = "gambitR3D")`.
 #'
 #' @keywords internal
+#' @useDynLib gambitR3D, .registration = TRUE
+#' @importFrom Rcpp sourceCpp
 "_PACKAGE"

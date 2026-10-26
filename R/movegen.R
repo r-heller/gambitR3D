@@ -412,9 +412,22 @@
   out
 }
 
-# All legal actions as an integer matrix, sorted by action id.
+# All legal actions as an integer matrix, sorted by action id. Uses the
+# compiled backend when available (identical output, see test-backend.R);
+# options(gambitR3D.engine = "r") selects the R reference.
 #' @noRd
-.g3_legal <- function(core, tabs, ctx = .g3_ctx(core, tabs)) {
+.g3_legal <- function(core, tabs, ctx = NULL) {
+  if (identical(.g3_engine(), "cpp")) {
+    m <- .g3_cpp_legal(.g3_cpp_ptr(), .g3_cpp_core(core))
+    colnames(m) <- .G3_ACOLS
+    return(m)
+  }
+  .g3_legal_r(core, tabs, ctx %||% .g3_ctx(core, tabs))
+}
+
+# Reference implementation in R.
+#' @noRd
+.g3_legal_r <- function(core, tabs, ctx = .g3_ctx(core, tabs)) {
   ps <- .g3_pseudo(core, ctx, tabs)
   n <- nrow(ps)
   if (n) {
