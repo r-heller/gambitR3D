@@ -273,8 +273,11 @@ g3_job_status <- function(job) {
 #' @export
 g3_job_result <- function(job) {
   st <- g3_job_status(job)
-  if (is.na(st$result) || !nzchar(st$result)) return(NULL)
-  readRDS(file.path(.g3_job_dir(job), st$result))
+  r <- st$result
+  if (is.null(r) || length(r) != 1L || is.na(r) || !nzchar(r)) return(NULL)
+  p <- file.path(.g3_job_dir(job), r)
+  if (!file.exists(p)) return(NULL)
+  readRDS(p)
 }
 
 #' Cancel a background job
