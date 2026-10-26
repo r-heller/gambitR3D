@@ -67,6 +67,8 @@
   e$tt <- new.env(hash = TRUE, parent = emptyenv())
   e$tt_n <- 0L
   e$tabs <- tabs
+  # An external stop check (set by background jobs) is polled every 64 nodes.
+  e$stop_check <- getOption("gambitR3D.stop_check")
   e
 }
 
@@ -76,6 +78,7 @@
   if (e$nodes > e$budget$nodes) e$stop <- TRUE
   if (is.finite(e$budget$time_ms) && (e$nodes %% 16 == 0) &&
       (proc.time()[["elapsed"]] - e$t0) * 1000 > e$budget$time_ms) e$stop <- TRUE
+  if (!is.null(e$stop_check) && (e$nodes %% 64 == 0) && isTRUE(e$stop_check())) e$stop <- TRUE
   e$stop
 }
 
