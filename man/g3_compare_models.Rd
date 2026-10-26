@@ -45,8 +45,10 @@ scheduled-game bounds and grouped bootstrap intervals.
 }
 \examples{
 \dontrun{
-cmp <- gambitR3D::g3_compare_models(c("model:my-checkpoint", "search"), budget = base::list(nodes = 200L),
-                                    seeds = 1L, play = base::list(simulations = 16L), max_plies = 40L)
+cmp <- gambitR3D::g3_compare_models(
+  c("model:my-checkpoint", "search"), budget = base::list(nodes = 200L),
+  seeds = 1L, play = base::list(simulations = 16L), max_plies = 40L
+)
 cmp$summary
 }
 }

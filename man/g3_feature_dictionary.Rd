@@ -23,5 +23,6 @@ test), never from rendered geometry; display settings never enter them.
 \examples{
 # Look up how mobility and attack counts are defined.
 dict <- gambitR3D::g3_feature_dictionary()
-dict[dict$table == "positions" & base::grepl("attacked", dict$name), c("name", "unit", "definition")]
+rows <- dict$table == "positions" & base::grepl("attacked", dict$name)
+dict[rows, c("name", "unit", "definition")]
 }
