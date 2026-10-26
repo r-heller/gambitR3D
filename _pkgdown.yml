@@ -1,0 +1,139 @@
+url: https://r-heller.github.io/gambitR3D/
+
+template:
+  bootstrap: 5
+  bslib:
+    primary: "#0072B2"
+
+navbar:
+  structure:
+    left: [intro, reference, articles, news]
+    right: [search, github]
+
+reference:
+- title: Rules and positions
+  desc: The experimental rules profile and the authoritative rules engine.
+  contents:
+  - g3_rules_profile
+  - g3_new_game
+  - g3_setup_position
+  - g3_legal_actions
+  - g3_apply_action
+  - g3_is_terminal
+  - g3_validate_state
+  - g3_position_key
+  - g3_state_hash
+- title: Games and files
+  desc: Recording games, session events and the native file formats.
+  contents:
+  - g3_game_apply
+  - g3_game_event
+  - g3_game_moves
+  - g3_replay_game
+  - g3_validate_game
+  - g3_game_hash
+  - g3_write_game
+  - g3_read_game
+  - g3_write_position
+  - g3_read_position
+- title: Playing
+  contents:
+  - g3_run_app
+  - g3_choose_action
+  - g3_analyse_position
+- title: Game database
+  contents:
+  - g3_open_game_db
+  - g3_close_game_db
+  - g3_save_game
+  - g3_load_game
+  - g3_import_games
+  - g3_query_games
+  - g3_export_games
+  - g3_quarantined_records
+  - g3_annotate_game
+  - g3_game_annotations
+  - g3_delete_games
+  - g3_restore_games
+  - g3_backup_game_db
+  - g3_restore_game_db
+  - g3_check_game_db
+- title: Analysis
+  contents:
+  - g3_analyse_game
+  - g3_analyse_database
+  - g3_feature_dictionary
+  - g3_compare_agents
+  - g3_split_games
+  - g3_plot_game
+  - g3_plot_board_heatmap
+  - g3_plot_collection
+  - g3_plot_comparison
+  - g3_export_analysis_report
+- title: Coaching and practice
+  contents:
+  - g3_explain_action
+  - g3_coach_game
+  - g3_create_exercises
+  - g3_exercise_catalogue
+  - g3_exercise_objective
+  - g3_exercise_hint
+  - g3_score_attempt
+  - g3_validate_exercise
+  - g3_write_exercises
+  - g3_read_exercises
+  - g3_learner_progress
+  - g3_learner_record
+  - g3_learner_settings
+  - g3_practice_plan
+  - g3_learner_export
+  - g3_learner_delete
+  - g3_learner_reset
+  - g3_tutor_context
+  - g3_validate_tutor_output
+- title: Models and training
+  desc: Optional; needs the isolated Python environment from g3_setup_ml().
+  contents:
+  - g3_setup_ml
+  - g3_model_capabilities
+  - g3_validate_model
+  - g3_register_model
+  - g3_predict_actions
+  - g3_train_model
+  - g3_self_play
+  - g3_compare_models
+  - g3_export_model
+- title: Background jobs
+  contents:
+  - g3_start_job
+  - g3_job_status
+  - g3_job_result
+  - g3_cancel_job
+  - g3_resume_job
+- title: Package
+  contents:
+  - gambitR3D-package
+
+articles:
+- title: Start here
+  navbar: ~
+  contents:
+  - gambitR3D
+  - rules
+  - app
+- title: Data and analysis
+  navbar: Data and analysis
+  contents:
+  - database
+  - analysis
+  - experiments
+- title: Learning and models
+  navbar: Learning and models
+  contents:
+  - coaching
+  - models
+  - training
+- title: Developers
+  navbar: Developers
+  contents:
+  - extending

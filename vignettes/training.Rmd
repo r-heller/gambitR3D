@@ -1,0 +1,116 @@
+---
+title: "A bounded training run"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{A bounded training run}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+# The code below runs only when a training environment is configured
+# (G3_ML_ENV) and the run is requested explicitly (G3_VIGNETTE_TRAINING=true).
+# Otherwise the code is shown without results.
+ml_ready <- nzchar(Sys.getenv("G3_ML_ENV")) && identical(Sys.getenv("G3_VIGNETTE_TRAINING"), "true")
+knitr::opts_chunk$set(eval = ml_ready)
+```
+
+```{r, eval = TRUE, echo = FALSE, results = "asis"}
+if (!ml_ready) {
+  cat("> This copy of the guide was built without a training environment, so the",
+      "code is shown without its output. See `vignette(\"models\")` to set one up.\n")
+}
+```
+
+This walkthrough trains the tiny square transformer on CPU within the
+package's smoke limits: at most 512 positions, 20 optimiser steps, 600 seconds
+and two threads. It shows every stage working: data from the rules engine,
+training, a checkpoint, an exact resume, and a legal move by the trained model.
+It does not produce a strong opponent, and no result here should be read as
+one.
+
+```{r}
+env <- Sys.getenv("G3_ML_ENV")
+work <- file.path(tempdir(), "g3-training")
+options(gambitR3D.ml_env = env, gambitR3D.registry_dir = file.path(work, "registry"))
+gambitR3D::g3_setup_ml(env)$status
+```
+
+## Data
+
+Training data comes only from the rules engine: positions from short games
+labelled by the alpha-beta teacher, tactical fixture games played to a real
+result, and positions where a platform carries a single piece, so that
+platform actions are not missing from the data. Every record stores its state,
+its complete legal-action list, its targets and its split; whole games are
+assigned to splits.
+
+```{r}
+dataset <- list(seed = 20261026L, games = 8L, positions = 160L, max_walk_plies = 24L,
+                platform_positions = 16L, teacher = list(nodes = 2000L, depth = 3L))
+```
+
+## Train, stop, resume
+
+```{r}
+cfg <- list(profile = "tiny", seed = 20261026L, steps = 12L, batch_size = 32L, threads = 2L,
+            chunk_steps = 4L, evaluate = "validation")
+part1 <- gambitR3D::g3_train_model(c(cfg, list(max_steps_this_run = 6L, register = FALSE)),
+                                   dataset, file.path(work, "run"))
+part1$status
+part2 <- gambitR3D::g3_train_model(c(cfg, list(resume_from = part1$checkpoint$path)),
+                                   dataset, file.path(work, "run"))
+rbind(part1$metrics, part2$metrics)[, c("step", "loss", "policy_loss", "grad_norm", "top1_agreement")]
+part2$model[c("parameter_count", "weights_changed")]
+```
+
+Loss values need not fall steadily in a dozen steps, and they need not here.
+What the run checks is that every loss and gradient is finite, the weights
+change, and the resumed run continues exactly where the first one stopped.
+The win/draw/loss head learns only from games that reached a real result;
+positions from games cut off at a ply limit carry no outcome target.
+
+## Play with the checkpoint
+
+```{r}
+model <- part2$model_id
+st <- gambitR3D::g3_new_game()$state
+d <- gambitR3D::g3_choose_action(st, agent = paste0("model:", model),
+                                 budget = list(mode = "mcts", simulations = 16L))
+d$label
+d$action_id %in% gambitR3D::g3_legal_actions(st)$action_id
+```
+
+The model scores only actions the engine says are legal, and the engine checks
+the chosen action again before applying it.
+
+## Self-play
+
+```{r}
+sp <- gambitR3D::g3_self_play(list(model = model, games = 2L, max_plies = 40L, simulations = 8L,
+                                   seed = 1L), file.path(work, "self-play"))
+sp$games[, c("game_id", "plies", "status", "result", "termination")]
+```
+
+A game stopped at the ply cap is recorded as `truncated`, never as a draw.
+
+## Running it in the background
+
+In the app (Training, "Train opponent") or from R, the same run can be a
+background job with progress, cancellation and resume:
+
+```{r, eval = FALSE}
+job <- gambitR3D::g3_start_job(list(
+  type = "training",
+  args = list(config = c(cfg, list(ml_env = env)), dataset = dataset, output_dir = file.path(work, "job")),
+  limits = list(wall_seconds = 600)
+))
+gambitR3D::g3_job_status(job)$progress
+gambitR3D::g3_cancel_job(job)
+job2 <- gambitR3D::g3_resume_job(job)
+```
+
+```{r, include = FALSE}
+gambitR3D:::.g3_ml_shutdown()
+```
