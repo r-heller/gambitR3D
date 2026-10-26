@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <title>gambitR3D</title>
+  <path d="M16 2.5 27 7.5 16 12.5 5 7.5Z" fill="#879CAA"/>
+  <path d="M16 10.5 27 15.5 16 20.5 5 15.5Z" fill="#DFE8ED" stroke="#1B2530" stroke-width="1"/>
+  <path d="M16 18.5 27 23.5 16 28.5 5 23.5Z" fill="#879CAA"/>
+  <circle cx="6" cy="23.5" r="2.2" fill="#E69F00"/>
+  <circle cx="26" cy="7.5" r="2.2" fill="#0072B2"/>
+</svg>

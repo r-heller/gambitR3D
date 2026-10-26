@@ -24,7 +24,7 @@ devtools::check()
 ```
 
 Optional tests are switched on by environment variables: `G3_ML_ENV` (path to a provisioned
-training environment, see `vignette("training")`) and `G3_BROWSER_TESTS=true` (Shiny browser tests).
+training environment, see `vignette("training")`) and `GAMBITR3D_BROWSER_TESTS=true` (Shiny browser tests with Chrome).
 
 ## Style
 

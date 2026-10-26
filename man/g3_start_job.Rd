@@ -8,7 +8,7 @@ g3_start_job(spec)
 }
 \arguments{
 \item{spec}{A list with \code{type} (one of \code{"search"}, \code{"analysis"},
-\code{"match"}, \code{"self_play"}, \code{"training"}, \code{"evaluation"}, \code{"export"}),
+\code{"match"}, \code{"self_play"}, \code{"training"}, \code{"evaluation"}, \code{"export"}, \code{"coach"}),
 \code{args} (a list passed to the job function), and optional \code{limits}
 (\code{wall_seconds}, default 600), \code{seed}, \code{job_dir} (default under
 \code{tools::R_user_dir("gambitR3D", "data")}) and \code{label}.}

@@ -33,6 +33,7 @@ Imports:
 Suggests:
     bslib,
     callr,
+    chromote,
     ggplot2,
     htmltools,
     knitr,

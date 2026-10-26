@@ -127,8 +127,13 @@ g3_start_job <- function(spec) {
 #' @noRd
 .g3_child_loader <- function() {
   path <- tryCatch(getNamespaceInfo("gambitR3D", "path"), error = function(e) NULL)
+  # An installed package also has DESCRIPTION and an R/ folder (holding only
+  # the lazy-load database), so a development load is recognised by its R
+  # source files; pkgload::load_all() on an installed copy fails.
   dev <- !is.null(path) && file.exists(file.path(path, "DESCRIPTION")) &&
-    dir.exists(file.path(path, "R")) && requireNamespace("pkgload", quietly = TRUE)
+    dir.exists(file.path(path, "R")) &&
+    any(grepl("\\.[Rr]$", list.files(file.path(path, "R")))) &&
+    requireNamespace("pkgload", quietly = TRUE)
   list(path = if (dev) path else NULL)
 }
 
