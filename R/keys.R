@@ -40,6 +40,12 @@
 # used. Piece ids, ply and counters are excluded.
 #' @noRd
 .g3_key_core <- function(core, tabs, ctx = NULL) {
+  .g3_sha256(.g3_key_text(core, tabs, ctx))
+}
+
+# The canonical text behind the repetition key (one string).
+#' @noRd
+.g3_key_text <- function(core, tabs, ctx = NULL) {
   occ <- core$occ
   code <- integer(64L)
   o <- occ > 0L
@@ -51,15 +57,15 @@
   ep <- "-"
   if (length(core$ep)) {
     if (is.null(ctx)) ctx <- .g3_ctx(core, tabs)
-    if (.g3_ep_effective(core, ctx, tabs)) ep <- paste(core$ep[3:4], core$ep[2L], sep = ".")
+    # Crossed file, crossed rank and victim square, as one string.
+    if (.g3_ep_effective(core, ctx, tabs)) ep <- paste(core$ep[3L], core$ep[4L], core$ep[2L], sep = ".")
   }
-  txt <- paste(
+  paste(
     tabs$rules_hash, core$side, paste(code, collapse = "."),
     paste(core$dock, collapse = "."), paste(core$orient, collapse = "."),
     paste(as.integer(cr), collapse = ""), paste(as.integer(first_rel), collapse = ""), ep,
     sep = "|"
   )
-  .g3_sha256(txt)
 }
 
 #' Repetition key of a position

@@ -17,6 +17,14 @@ test_that("en passant: any empty square at the crossed coordinate, one action on
   expect_true(all(ep$capture_id == "wP"))
   s2 <- g3_apply_action(s1, "m:N:2:1-N:1:0")$state
   expect_false("wP" %in% s2$pieces$id)
+  # The usable right enters the key as one text: file 2, rank 3, victim square.
+  tabs <- .g3_tables()
+  txt <- .g3_key_text(.g3_core(s1, tabs), tabs)
+  expect_length(txt, 1L)
+  expect_match(txt, paste0("\\|2\\.3\\.", match("W:1:3", tabs$sq_id), "$"))
+  no_ep <- s1
+  no_ep$ep <- NULL
+  expect_false(identical(g3_position_key(s1), g3_position_key(no_ep)))
   # A single step creates no entitlement.
   s1b <- g3_apply_action(st, "m:W:1:1-W:1:2")$state
   expect_null(s1b$ep)
