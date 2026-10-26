@@ -91,10 +91,92 @@ g3_position_key <- function(state) {
 }
 
 # Full-state checksum: canonical JSON of the whole logical state, including
-# ply, counters, repetition history, piece ids and outcome.
+# ply, counters, repetition history, piece ids and outcome. The text is
+# built directly (the hot path of every transition and replay); it is
+# byte-identical to `.g3_canonical_json()` of the plain state, which
+# `.g3_state_hash_ref()` keeps as the reference (see test-keys.R).
 #' @noRd
 .g3_state_hash <- function(state) {
+  txt <- .g3_state_json(state)
+  if (is.null(txt)) return(.g3_state_hash_ref(state))
+  .g3_sha256(txt)
+}
+
+#' @noRd
+.g3_state_hash_ref <- function(state) {
   .g3_hash_object(unclass(.g3_state_plain(state)))
+}
+
+# JSON string literals; NULL when a string needs escapes beyond quotes and
+# backslashes, so the caller falls back to jsonlite.
+#' @noRd
+.g3_jstr <- function(x) {
+  out <- ifelse(is.na(x), "null", paste0("\"", gsub("\"", "\\\\\"", gsub("\\\\", "\\\\\\\\", x)), "\""))
+  out
+}
+
+#' @noRd
+.g3_jnum <- function(x) ifelse(is.na(x), "null", formatC(x, format = "d", big.mark = ""))
+
+#' @noRd
+.g3_jlgl <- function(x) ifelse(is.na(x), "null", ifelse(x, "true", "false"))
+
+#' @noRd
+.g3_state_json <- function(state) {
+  b <- state$boards
+  p <- state$pieces
+  strs <- c(b$id, b$type, b$dock, p$id, p$type, p$origin_type, p$color, p$square_id,
+            state$side, state$rules_hash, state$rules_version, state$schema_version,
+            unlist(state$repetition$keys), unlist(state$outcome), unlist(state$ep[c("victim_id", "victim_square")]))
+  strs <- strs[!is.na(strs)]
+  # Control characters or non-ASCII text: use the general serialiser.
+  if (any(grepl("[\001-\037\177]", strs)) || any(!grepl("^[ -~]*$", strs))) return(NULL)
+  num_ok <- function(v) is.numeric(v) && all(is.na(v) | v == round(v))
+  if (!num_ok(b$orientation) || !num_ok(state$ply) || !num_ok(state$clocks$halfmove)) return(NULL)
+  boards <- paste0(
+    "{\"dock\":", .g3_jstr(b$dock), ",\"id\":", .g3_jstr(b$id),
+    ",\"orientation\":", .g3_jnum(b$orientation), ",\"type\":", .g3_jstr(b$type), "}",
+    collapse = ","
+  )
+  pieces <- if (nrow(p)) {
+    paste0(
+      "{\"color\":", .g3_jstr(p$color), ",\"has_moved\":", .g3_jlgl(p$has_moved),
+      ",\"id\":", .g3_jstr(p$id), ",\"origin_type\":", .g3_jstr(p$origin_type),
+      ",\"square_id\":", .g3_jstr(p$square_id), ",\"type\":", .g3_jstr(p$type), "}",
+      collapse = ","
+    )
+  } else {
+    ""
+  }
+  ep <- if (is.null(state$ep)) "null" else {
+    e <- state$ep
+    if (!num_ok(e$crossed_file) || !num_ok(e$crossed_rank)) return(NULL)
+    paste0("{\"crossed_file\":", .g3_jnum(e$crossed_file), ",\"crossed_rank\":", .g3_jnum(e$crossed_rank),
+           ",\"victim_id\":", .g3_jstr(e$victim_id), ",\"victim_square\":", .g3_jstr(e$victim_square), "}")
+  }
+  oc <- state$outcome
+  cr <- state$rights$castling
+  ft <- state$rights$first_turn_completed
+  keys <- unlist(state$repetition$keys)
+  paste0(
+    "{\"boards\":[", boards, "]",
+    ",\"clocks\":{\"halfmove\":", .g3_jnum(state$clocks$halfmove), "}",
+    ",\"ep\":", ep,
+    ",\"outcome\":{\"reason\":", .g3_jstr(oc$reason), ",\"result\":", .g3_jstr(oc$result),
+    ",\"status\":", .g3_jstr(oc$status), "}",
+    ",\"pieces\":[", pieces, "]",
+    ",\"ply\":", .g3_jnum(state$ply),
+    ",\"repetition\":{\"keys\":[", paste(.g3_jstr(keys), collapse = ","), "]}",
+    ",\"rights\":{\"castling\":{\"black_kingside\":", .g3_jlgl(cr$black_kingside),
+    ",\"black_queenside\":", .g3_jlgl(cr$black_queenside),
+    ",\"white_kingside\":", .g3_jlgl(cr$white_kingside),
+    ",\"white_queenside\":", .g3_jlgl(cr$white_queenside), "}",
+    ",\"first_turn_completed\":{\"black\":", .g3_jlgl(ft$black), ",\"white\":", .g3_jlgl(ft$white), "}}",
+    ",\"rules_hash\":", .g3_jstr(state$rules_hash),
+    ",\"rules_version\":", .g3_jstr(state$rules_version),
+    ",\"schema_version\":", .g3_jstr(state$schema_version),
+    ",\"side\":", .g3_jstr(state$side), "}"
+  )
 }
 
 # A state as plain lists (data frames as row records), for JSON.
