@@ -22,7 +22,10 @@ with \code{\link[=g3_read_game]{g3_read_game()}}).}
 
 \item{budget}{Search budget per position: a list with any of \code{nodes}
 (default 2000), \code{time_ms} and \code{depth} (see \code{\link[=g3_choose_action]{g3_choose_action()}}). Only
-node and depth budgets give run-to-run identical results.}
+node and depth budgets give run-to-run identical results. With a model
+evaluator the model fields \code{mode} (\code{"mcts"}, \code{"policy"} or
+\code{"ordering"}) and \code{simulations} (MCTS simulations per position) are
+accepted too; other fields are refused.}
 
 \item{cache}{Optional environment used as an evaluation cache, shared
 across calls (for example \code{new.env()}). Entries are keyed by the full
@@ -46,7 +49,10 @@ A \code{g3_analysis} list:
 \item \code{positions}: one row per position (plies 0..n) of features.
 \item \code{evaluations}: one row per position with raw, White and mover scores,
 expected scores, best and played alternatives, move losses and
-\code{missing_reason}.
+\code{missing_reason}. For a network model the raw score is the model's
+value (\code{score_kind} \code{"model_value"}) and the expected score is
+p(win) + 0.5 p(draw) from its WDL head (\code{expected_score_kind}
+\code{"model_wdl"}), not the logistic map.
 \item \code{tactics}: one row per tactical label with \code{claim_strength}.
 \item \code{events}: session events (resign, draw_agreed, truncated, takeback).
 \item \code{mobility}, \code{platforms}, \code{pieces}, \code{squares}: long per-position

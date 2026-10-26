@@ -187,7 +187,11 @@
 }
 
 # Build a dataset into `dir`. Returns the manifest (also written as
-# dataset.json). `progress(done, total)` is optional.
+# dataset.json). `progress(done, total)` is optional. `should_stop()` is
+# polled before every teacher search (once per position, also inside a
+# game); when it returns TRUE generation ends cleanly: nothing is written
+# (a resumed run regenerates the same seeded data) and a
+# `g3_dataset_stopped` record is returned instead of a manifest.
 #' @noRd
 .g3_ml_build_dataset <- function(spec = list(), dir, progress = NULL, should_stop = NULL) {
   s <- .g3_ml_data_spec(spec)
@@ -197,6 +201,11 @@
   recs <- list()
   games <- list()
   budget_left <- function() as.integer(s$max_positions) - length(recs)
+  stop_now <- function() is.function(should_stop) && isTRUE(should_stop())
+  stopped <- function(n_records) {
+    structure(list(stopped = TRUE, records_generated = as.integer(n_records), dir = dir,
+                   elapsed_seconds = proc.time()[["elapsed"]] - t0), class = "g3_dataset_stopped")
+  }
   # 1. Fixture games played to a terminal state where possible.
   if (isTRUE(s$fixtures)) {
     fx <- .g3_ml_fixtures()
@@ -207,6 +216,7 @@
       k <- 0L
       oc <- .g3_outcome_core(core, tabs)
       while (!identical(oc$status, "terminal") && k < s$fixture_max_plies && budget_left() > length(grec)) {
+        if (stop_now()) return(stopped(length(recs) + length(grec)))
         t <- .g3_ml_teacher(core, tabs, list(nodes = s$fixture_nodes, depth = 6L))
         grec[[length(grec) + 1L]] <- .g3_ml_record(core, tabs, gid, k, "fixture_game", fx[[nm]]$split, t$action_id, 1,
                                                     "alpha_beta_choice", .g3_ml_aux_target(t$score, s$aux_scale),
@@ -228,6 +238,7 @@
   # 2. Platform-rich edited positions (one record each).
   for (i in seq_along(pl <- .g3_ml_platform_positions(min(s$platform_positions, budget_left()), s$seed + 1L, tabs))) {
     core <- .g3_core(pl[[i]], tabs)
+    if (stop_now()) return(stopped(length(recs)))
     t <- .g3_ml_teacher(core, tabs, s$teacher)
     gid <- sprintf("edited-platform-%03d", i)
     sp <- .g3_ml_split_of(gid, s$seed, s$split)
@@ -244,7 +255,6 @@
   done <- 0L
   for (g in seq_len(s$games)) {
     if (done >= n_teacher) break
-    if (is.function(should_stop) && isTRUE(should_stop())) break
     gid <- sprintf("walk-%03d", g)
     sp <- .g3_ml_split_of(gid, s$seed, s$split)
     core <- .g3_initial_core(tabs)
@@ -253,6 +263,7 @@
     k <- 0L
     oc <- .g3_outcome_core(core, tabs)
     while (!identical(oc$status, "terminal") && length(grec) < per_game && done + length(grec) < n_teacher) {
+      if (stop_now()) return(stopped(length(recs) + length(grec)))
       t <- .g3_ml_teacher(core, tabs, s$teacher)
       grec[[length(grec) + 1L]] <- .g3_ml_record(core, tabs, gid, k, "teacher_trajectory", sp, t$action_id, 1,
                                                   "alpha_beta_choice", .g3_ml_aux_target(t$score, s$aux_scale),

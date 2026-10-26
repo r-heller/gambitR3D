@@ -152,5 +152,12 @@
     v <- round(score)
     return(.g3_tr("score.heuristic", lang, value = if (v > 0) paste0("+", v) else as.character(v)))
   }
-  .g3_tr("score.model_value", lang, value = format(signif(score, 3)), kind = kind)
+  .g3_tr("score.model_value", lang, value = format(signif(score, 3)), kind = .g3_kind_word(kind, lang))
+}
+
+# Name of a model value kind ("MCTS Q value", ...); unknown kinds as given.
+#' @noRd
+.g3_kind_word <- function(kind, lang) {
+  key <- paste0("kind.", kind)
+  if (key %in% names(.g3_coach_catalogue(lang)$terms)) .g3_term(key, lang) else as.character(kind)
 }

@@ -323,3 +323,119 @@ test_that("tables agree with each other and with the feature dictionary", {
   expect_identical(r$summary$n_plies, 16L)
   expect_identical(r$summary$n_captures, sum(r$moves$capture))
 })
+
+# A stand-in for a network model's position analysis (MCTS mode), so the
+# analysis tables can be checked without Python. The second legal action is
+# the most visited; the last has the largest Q. White to act: W/D/L
+# 0.5/0.3/0.2, Black to act: 0.2/0.3/0.5.
+fake_network_analysis <- function(state, evaluator = NULL, budget = NULL, actions = NULL) {
+  ids <- g3_legal_actions(state)$action_id
+  n <- length(ids)
+  q <- seq(-0.4, 0.4, length.out = n)
+  visits <- rev(seq_len(n))
+  visits[2L] <- n + 5L
+  rk <- order(order(-visits, seq_len(n)))
+  wdl <- if (identical(state$side, "white")) c(win = 0.5, draw = 0.3, loss = 0.2) else c(win = 0.2, draw = 0.3, loss = 0.5)
+  alt <- data.frame(action_id = ids, label = ids, type = "move", score = q, score_kind = "mcts_q", mate_in = NA_integer_,
+                    bound = "model", rank = as.integer(rk), probability = 1 / n, logit = 0, visits = as.integer(visits),
+                    q = q, stringsAsFactors = FALSE)
+  if (!is.null(actions)) {
+    alt <- alt[alt$action_id %in% actions, , drop = FALSE]
+    alt$rank <- as.integer(rank(alt$rank, ties.method = "first"))
+  }
+  structure(list(
+    alternatives = alt, root_score = unname(wdl[["win"]] - wdl[["loss"]]), score_kind = "model_value",
+    perspective = "side_to_act", side = state$side, pv = alt$action_id[alt$rank == 1L], pv_labels = character(),
+    depth = 2L, completeness = "complete", cost = list(nodes = budget$simulations %||% 32, elapsed_ms = 1),
+    provenance = list(model_id = "fake-net", weights_digest = "rev-x", budget = budget, mode = "mcts"),
+    wdl = wdl, expected_score = unname(wdl[["win"]] + 0.5 * wdl[["draw"]]), value_source = "network"
+  ), class = "g3_position_analysis")
+}
+
+test_that("model analyses have White and mover views and WDL expected scores (F15)", {
+  local_mocked_bindings(g3_analyse_position = fake_network_analysis, .package = "gambitR3D")
+  m <- structure(list(model_id = "fake-net", revision = "rev-x"), class = "g3_model")
+  g <- play_ids(g3_new_game()$state, c("m:W:0:1-W:0:2", "m:B:2:2-B:2:1"))
+  r <- g3_analyse_game(g, evaluator = m, budget = list(simulations = 4L, mode = "mcts"))
+  e <- r$evaluations
+  expect_identical(e$score_kind, rep("model_value", 3L))
+  expect_identical(e$side, c("white", "black", "white"))
+  # Raw scores are the model's value for the side to act; views are signed.
+  expect_equal(e$raw_score, c(0.3, -0.3, 0.3))
+  expect_equal(e$score_mover, e$raw_score)
+  expect_equal(e$score_white, c(0.3, 0.3, 0.3))
+  # Expected scores come from the WDL head, p(win) + 0.5 p(draw), not the logistic map.
+  expect_equal(e$expected_score_mover, c(0.65, 0.35, 0.65))
+  expect_equal(e$expected_score_white, c(0.65, 0.65, 0.65))
+  expect_identical(unique(e$expected_score_kind), "model_wdl")
+  expect_identical(unique(e$calibration), "uncalibrated")
+  expect_false(isTRUE(all.equal(e$expected_score_mover[1], 1 / (1 + exp(-0.3 / 400)))))
+  # The best action is the model's first choice (most visited), not the largest Q.
+  ids <- g3_legal_actions(g3_new_game()$state)$action_id
+  n <- length(ids)
+  q <- seq(-0.4, 0.4, length.out = n)
+  pi <- match("m:W:0:1-W:0:2", ids)
+  expect_identical(e$best_action_id[1], ids[2])
+  expect_identical(e$best_kind[1], "mcts_q")
+  expect_equal(e$best_score[1], q[2])
+  expect_equal(e$played_score[1], q[pi])
+  expect_identical(e$played_rank[1], as.integer(if (pi == 2L) 1L else if (pi == 1L) 2L else pi))
+  expect_equal(e$expected_loss_mover[1], (q[2] - q[pi]) / 2)
+  expect_true(all(is.na(e$move_loss_raw)))
+  # Provenance names the model scale and the model budget.
+  pv <- r$provenance
+  expect_identical(pv$model_revision, "rev-x")
+  expect_identical(pv$budget$simulations, 4L)
+  expect_identical(pv$budget$mode, "mcts")
+  expect_match(pv$score_scale$raw_unit, "p(win) - p(loss)", fixed = TRUE)
+  expect_match(pv$score_scale$definition, "p(win) + 0.5 p(draw)", fixed = TRUE)
+  skip_if_not_installed("ggplot2")
+  skip_if_not_installed("viridisLite")
+  p <- g3_plot_game(r, metric = "expected_score")
+  expect_false(attr(p, "g3_plot_meta")$empty)
+  expect_match(ggplot2::get_labs(p)$subtitle, "WDL head", fixed = TRUE)
+  ps <- g3_plot_game(r, metric = "score")
+  expect_false(attr(ps, "g3_plot_meta")$empty)
+  expect_match(attr(ps, "g3_plot_meta")$y_label, "Model value", fixed = TRUE)
+})
+
+test_that("a model given as an id records its registry revision (F16)", {
+  g <- capture_game()
+  r1 <- g3_analyse_game(g, evaluator = "model:builtin-search", budget = list(nodes = 150L))
+  mobj <- .g3_model_resolve("model:builtin-search")
+  rev <- .g3_hash_object(mobj$manifest)
+  expect_identical(r1$provenance$model_revision, rev)
+  expect_identical(r1$provenance$evaluator_version, rev)
+  expect_true(all(r1$evaluations$model_revision == rev))
+  # The same revision whether the model is given as an id or as an object.
+  r2 <- g3_analyse_game(g, evaluator = mobj, budget = list(nodes = 150L))
+  expect_identical(r2$provenance$model_revision, rev)
+  expect_identical(r2$positions$analysis_context_hash, r1$positions$analysis_context_hash)
+  # An unknown id keeps NA (and its positions NA scores with the reason).
+  r3 <- g3_analyse_game(g, evaluator = "model:not-installed")
+  expect_true(is.na(r3$provenance$model_revision))
+})
+
+test_that("model budget fields are accepted for model evaluators only (F17)", {
+  g <- capture_game()
+  expect_error(g3_analyse_game(g, budget = list(simulations = 8L)), "simulations", class = "g3_budget_exceeded")
+  expect_error(g3_analyse_game(g, budget = list(mode = "mcts")), class = "g3_budget_exceeded")
+  r <- g3_analyse_game(g, evaluator = "model:builtin-search", budget = list(nodes = 120L, simulations = 8L, mode = "mcts"))
+  expect_identical(r$provenance$budget$simulations, 8L)
+  expect_match(.g3_an_budget_text(r$provenance$budget), "8 simulations", fixed = TRUE)
+  r2 <- g3_analyse_game(g, evaluator = "model:builtin-search", budget = list(nodes = 120L, simulations = 16L))
+  expect_false(identical(r$positions$analysis_context_hash, r2$positions$analysis_context_hash))
+  # Unknown fields and bad values are still refused.
+  expect_error(g3_analyse_game(g, evaluator = "model:builtin-search", budget = list(plies = 2L)),
+               "Unknown budget field: plies", class = "g3_budget_exceeded")
+  expect_error(g3_analyse_game(g, evaluator = "model:builtin-search", budget = list(mode = "beam")),
+               class = "g3_budget_exceeded")
+  expect_error(g3_analyse_game(g, evaluator = "model:builtin-search", budget = list(simulations = 0L)),
+               class = "g3_budget_exceeded")
+  # Collections take the same budgets.
+  run <- g3_analyse_database(list(g), evaluator = "model:builtin-search", budget = list(nodes = 100L, simulations = 4L))
+  expect_identical(run$manifest$budget$simulations, 4L)
+  expect_output(print(run), "4 simulations", fixed = TRUE)
+  expect_error(g3_analyse_database(list(g), evaluator = "none", budget = list(simulations = 4L)),
+               class = "g3_budget_exceeded")
+})

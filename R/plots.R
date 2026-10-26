@@ -87,8 +87,10 @@ utils::globalVariables(".data")
 #' heuristic units (scale 400), uncalibrated and not probabilities.
 #'
 #' @param result A `g3_analysis`.
-#' @param metric `"expected_score"` (default), `"score"` (heuristic units;
-#'   forced mates are drawn as off-scale markers), `"move_loss"` (matched
+#' @param metric `"expected_score"` (default; model rows use the model's
+#'   WDL estimate), `"score"` (heuristic units, or a model's value
+#'   p(win) - p(loss); forced mates are drawn as off-scale markers),
+#'   `"move_loss"` (matched
 #'   best-versus-played loss per action), `"material"` (provisional piece
 #'   values) or `"mobility"` (legal actions and distinct destinations).
 #' @param perspective `"white"` (default) or `"mover"` (the side to act at
@@ -137,16 +139,21 @@ g3_plot_game <- function(result, metric = "expected_score", perspective = "white
     line_rows <- !is.na(ev$expected_score_kind) & ev$expected_score_kind != "terminal_exact"
     y_lab <- paste0("Expected score, ", persp_lab)
   } else {
-    units <- unique(stats::na.omit(ev$score_unit[!is.na(ev$score_kind) & ev$score_kind == "heuristic"]))
-    if (length(units) > 1L) {
+    signed <- !is.na(ev$score_kind) & ev$score_kind %in% c("heuristic", "model_value")
+    units <- unique(stats::na.omit(ev$score_unit[signed]))
+    if (length(units) > 1L || length(unique(ev$score_kind[signed])) > 1L) {
       .g3_abort("g3_incompatible_model", paste0(
-        "The evaluations mix score units (", paste(units, collapse = ", "),
+        "The evaluations mix score units (", paste(unique(c(units, ev$score_kind[signed])), collapse = ", "),
         "); raw scores in different units cannot share an axis. Plot metric = 'expected_score' or one evaluator."
       ))
     }
     val <- if (perspective == "white") ev$score_white else ev$score_mover
-    line_rows <- !is.na(ev$score_kind) & ev$score_kind == "heuristic"
-    y_lab <- paste0("Search score (heuristic units, not centipawns), ", persp_lab)
+    line_rows <- signed
+    y_lab <- if (any(ev$score_kind[signed] == "model_value")) {
+      paste0("Model value p(win) - p(loss), ", persp_lab)
+    } else {
+      paste0("Search score (heuristic units, not centipawns), ", persp_lab)
+    }
   }
   # Without any score for an unfinished position there is no trajectory;
   # exact terminal results alone are not plotted as one.
@@ -215,10 +222,18 @@ g3_plot_game <- function(result, metric = "expected_score", perspective = "white
                                  fill = "white", colour = "grey10", stroke = 1, inherit.aes = FALSE)
   }
   scale_note <- if (length(line_scales) > 1L) " Different score scales are drawn as separate series, never joined." else ""
+  model_rows <- !is.na(ev$score_kind) & ev$score_kind == "model_value"
   if (metric == "expected_score") {
     p <- p + ggplot2::scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25), expand = ggplot2::expansion(mult = 0.02))
-    sub <- paste0("Heuristic expected score = 1 / (1 + exp(-score / ", .G3_LOGISTIC_SCALE,
-                  ")): an uncalibrated display map of search scores, not a probability.", scale_note)
+    sub <- if (any(model_rows & !is.na(d$value))) {
+      paste0("Model expected score = p(win) + 0.5 p(draw) from the model's WDL head: a model estimate, ",
+             "uncalibrated and valid only for model revision ", pv$model_revision %||% "-", ".", scale_note)
+    } else {
+      paste0("Heuristic expected score = 1 / (1 + exp(-score / ", .G3_LOGISTIC_SCALE,
+             ")): an uncalibrated display map of search scores, not a probability.", scale_note)
+    }
+  } else if (any(model_rows)) {
+    sub <- paste0("Model values p(win) - p(loss) in [-1, 1] from the model's WDL head (model estimates).", scale_note)
   } else {
     sub <- paste0("Raw search scores in heuristic units (provisional weights); forced mates are off-scale markers.", scale_note)
   }
@@ -506,12 +521,20 @@ g3_plot_board_heatmap <- function(result, metric = "occupancy", coordinate_space
 #' analysed games, always with counts and denominators. Truncated and
 #' unfinished games are separate categories, never draws.
 #'
+#' Shares are drawn with Wilson score intervals at the 0.95 level: for
+#' outcomes and terminations with games as the independent units, for
+#' platform use with the game-clustered effective sample size (actions
+#' within a game are not independent). With fewer than 30 analysed games
+#' the caption warns that the shares are unstable.
+#'
 #' @param x A `g3_database_analysis` or a list of `g3_analysis`.
 #' @param metric `"outcome"`, `"termination"`, `"length"` or
 #'   `"platform_use"` (share of actions that are platform actions, by game
 #'   phase).
-#' @return A `ggplot` object with attributes `g3_plot_data` and
-#'   `g3_plot_meta` (`metric`, `n_games`, `denominator_label`, `empty`).
+#' @return A `ggplot` object with attributes `g3_plot_data` (with `share`,
+#'   `ci_low`, `ci_high` for rates) and `g3_plot_meta` (`metric`,
+#'   `n_games`, `denominator_label`, `empty`, `small_sample`,
+#'   `small_sample_threshold`, `conf_level`).
 #' @examplesIf requireNamespace("ggplot2", quietly = TRUE) && requireNamespace("viridisLite", quietly = TRUE)
 #' # A one-game collection: the outcome plot keeps its denominator.
 #' g1 <- gambitR3D::g3_game_apply(gambitR3D::g3_new_game(), "m:W:0:1-W:0:2")
@@ -537,27 +560,44 @@ g3_plot_collection <- function(x, metric = "outcome") {
                          platform_use = "Platform actions by game phase"), " (", n, " analysed games)")
   if (!n) return(.g3_plot_empty(title, paste0("No analysed games in this selection (filters: ", filt, ").", extra),
                                 list(metric = metric, n_games = 0L)))
-  cap <- .g3_plot_wrap(paste0("Filters: ", filt, ".", extra, " Truncated = computational cutoff, not a draw."), 110)
+  small_note <- if (n < .G3_SMALL_SAMPLE_GAMES) {
+    paste0(" Small sample: ", n, " analysed games (fewer than ", .G3_SMALL_SAMPLE_GAMES,
+           "), so shares are unstable and intervals wide.")
+  } else ""
+  cap <- .g3_plot_wrap(paste0("Filters: ", filt, ".", extra, " Truncated = computational cutoff, not a draw.", small_note), 110)
+  pct <- function(v) paste0(round(100 * v), "%")
   if (metric %in% c("outcome", "termination")) {
+    tb <- if (metric == "outcome") sm$outcomes else sm$terminations
     d <- if (metric == "outcome") {
-      data.frame(category = sm$outcomes$result, n_games = sm$outcomes$n_games, denominator = n, stringsAsFactors = FALSE)
+      data.frame(category = tb$result, n_games = tb$n_games, denominator = n, stringsAsFactors = FALSE)
     } else {
-      data.frame(category = sm$terminations$termination, n_games = sm$terminations$n_games, denominator = n,
-                 group = sm$terminations$outcome_class, stringsAsFactors = FALSE)
+      data.frame(category = tb$termination, n_games = tb$n_games, denominator = n,
+                 group = tb$outcome_class, stringsAsFactors = FALSE)
     }
     d$share <- d$n_games / d$denominator
+    w <- .g3_wilson(d$n_games, d$denominator)
+    d$ci_low <- w$low
+    d$ci_high <- w$high
+    d$small_sample <- n < .G3_SMALL_SAMPLE_GAMES
     d$category <- factor(d$category, levels = rev(d$category))
     d$label <- paste0(d$n_games, " / ", d$denominator)
     fill_var <- if (metric == "outcome") "category" else "group"
     lv <- unique(as.character(d[[fill_var]]))
-    p <- ggplot2::ggplot(d, ggplot2::aes(x = .data$n_games, y = .data$category, fill = .data[[fill_var]])) +
+    p <- ggplot2::ggplot(d, ggplot2::aes(x = .data$share, y = .data$category, fill = .data[[fill_var]])) +
       ggplot2::geom_col(width = 0.7, colour = "grey20", linewidth = 0.2) +
-      ggplot2::geom_text(ggplot2::aes(label = .data$label), hjust = -0.15, size = 3.2, colour = "grey10") +
+      ggplot2::geom_errorbar(ggplot2::aes(xmin = .data$ci_low, xmax = .data$ci_high), width = 0.25, colour = "grey15",
+                             linewidth = 0.4, orientation = "y", na.rm = TRUE) +
+      ggplot2::geom_text(ggplot2::aes(x = .data$ci_high, label = .data$label), hjust = -0.2, size = 3.2, colour = "grey10",
+                         na.rm = TRUE) +
       ggplot2::scale_fill_manual(values = stats::setNames(.g3_plot_viridis(length(lv), 0.1, 0.9), lv),
                                  name = if (metric == "outcome") NULL else "Outcome class",
                                  guide = if (metric == "outcome") "none" else "legend") +
-      ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0, 0.2))) +
-      ggplot2::labs(title = title, x = "Games (label: games / analysed games)", y = NULL, caption = cap) + .g3_plot_theme()
+      ggplot2::scale_x_continuous(limits = c(0, 1.3), breaks = seq(0, 1, 0.25), labels = pct,
+                                  expand = ggplot2::expansion(mult = c(0, 0.02))) +
+      ggplot2::labs(title = title,
+                    subtitle = "Bar: share of analysed games; whisker: 95% Wilson interval (games as independent units).",
+                    x = "Share of analysed games (label: games / analysed games)", y = NULL, caption = cap) +
+      .g3_plot_theme()
     den <- "analysed games"
   } else if (metric == "length") {
     d <- sm$games[, c("game_id", "n_plies", "outcome_class")]
@@ -578,20 +618,29 @@ g3_plot_collection <- function(x, metric = "outcome") {
   } else {
     d <- sm$platform_use_by_phase
     d$phase <- factor(d$phase, levels = d$phase)
-    d$label <- paste0(d$platform_actions, " / ", d$actions)
+    d$label <- paste0(d$platform_actions, " / ", d$actions, " (", d$n_games, " games)")
+    top <- min(1.15, max(0.05, max(c(d$share, d$ci_high), na.rm = TRUE) * 1.2))
+    br <- pretty(c(0, min(1, top)))
     p <- ggplot2::ggplot(d, ggplot2::aes(x = .data$phase, y = .data$share)) +
       ggplot2::geom_col(fill = .g3_plot_viridis(1L, 0.35, 0.35), width = 0.6, na.rm = TRUE) +
-      ggplot2::geom_text(ggplot2::aes(label = .data$label, y = ifelse(is.na(.data$share), 0, .data$share)),
-                         vjust = -0.4, size = 3.2) +
-      ggplot2::scale_y_continuous(limits = c(0, max(0.05, max(d$share, na.rm = TRUE) * 1.25)),
-                                  labels = function(v) paste0(round(100 * v), "%")) +
-      ggplot2::labs(title = title, x = NULL, y = "Platform actions / all actions in the phase",
-                    subtitle = paste0("Overall: ", sm$platform_use$platform_actions, " of ", sm$platform_use$total_actions,
-                                      " actions; ", sm$platform_use$games_with_platform_action, " of ", n,
-                                      " games use a platform."), caption = cap) + .g3_plot_theme()
+      ggplot2::geom_errorbar(ggplot2::aes(ymin = .data$ci_low, ymax = .data$ci_high), width = 0.2, colour = "grey15",
+                             linewidth = 0.4, na.rm = TRUE) +
+      ggplot2::geom_text(ggplot2::aes(label = .data$label,
+                                      y = ifelse(is.na(.data$ci_high), ifelse(is.na(.data$share), 0, .data$share), .data$ci_high)),
+                         vjust = -0.5, size = 3) +
+      ggplot2::scale_y_continuous(limits = c(0, top), breaks = br[br <= 1], labels = pct) +
+      ggplot2::labs(title = title, x = NULL, y = .g3_plot_wrap("Platform actions / all actions in the phase", 26),
+                    subtitle = .g3_plot_wrap(paste0(
+                      "Overall: ", sm$platform_use$platform_actions, " of ", sm$platform_use$total_actions,
+                      " actions; ", sm$platform_use$games_with_platform_action, " of ", n,
+                      " games use a platform. Whisker: 95% Wilson interval on the game-clustered effective sample ",
+                      "size (actions within a game are not independent)."
+                    )), caption = cap) + .g3_plot_theme()
     den <- "actions in each phase"
   }
-  .g3_plot_finish(p, d, list(metric = metric, n_games = n, denominator_label = den, empty = FALSE))
+  .g3_plot_finish(p, d, list(metric = metric, n_games = n, denominator_label = den, empty = FALSE,
+                             small_sample = n < .G3_SMALL_SAMPLE_GAMES, small_sample_threshold = .G3_SMALL_SAMPLE_GAMES,
+                             conf_level = if (metric == "length") NA_real_ else .G3_RATE_CONF))
 }
 
 #' Plot a paired agent comparison

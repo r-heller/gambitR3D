@@ -62,7 +62,7 @@ loaded, and installing the package downloads nothing.
 
 ```{r, eval = FALSE}
 # Creates the environment with uv from the package's pinned lock (with
-# hashes): Python 3.12, CPU-only torch, numpy, safetensors. About 800 MB.
+# hashes): Python 3.12, CPU-only torch, numpy, safetensors. About 820 MB installed.
 env <- file.path(tools::R_user_dir("gambitR3D", "data"), "ml-env")
 report <- gambitR3D::g3_setup_ml(env)
 report

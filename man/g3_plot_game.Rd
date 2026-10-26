@@ -14,8 +14,10 @@ g3_plot_game(
 \arguments{
 \item{result}{A \code{g3_analysis}.}
 
-\item{metric}{\code{"expected_score"} (default), \code{"score"} (heuristic units;
-forced mates are drawn as off-scale markers), \code{"move_loss"} (matched
+\item{metric}{\code{"expected_score"} (default; model rows use the model's
+WDL estimate), \code{"score"} (heuristic units, or a model's value
+p(win) - p(loss); forced mates are drawn as off-scale markers),
+\code{"move_loss"} (matched
 best-versus-played loss per action), \code{"material"} (provisional piece
 values) or \code{"mobility"} (legal actions and distinct destinations).}
 

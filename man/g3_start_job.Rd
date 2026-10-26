@@ -8,10 +8,14 @@ g3_start_job(spec)
 }
 \arguments{
 \item{spec}{A list with \code{type} (one of \code{"search"}, \code{"analysis"},
-\code{"match"}, \code{"self_play"}, \code{"training"}, \code{"evaluation"}, \code{"export"}, \code{"coach"}),
+\code{"match"}, \code{"self_play"}, \code{"training"}, \code{"evaluation"}, \code{"coach"}),
 \code{args} (a list passed to the job function), and optional \code{limits}
-(\code{wall_seconds}, default 600), \code{seed}, \code{job_dir} (default under
-\code{tools::R_user_dir("gambitR3D", "data")}) and \code{label}.}
+(\code{wall_seconds}, a finite positive number, default 600), \code{seed},
+\code{job_dir} (default under \code{tools::R_user_dir("gambitR3D", "data")}) and
+\code{label}. Jobs stop themselves at the limit; a job still running after
+the limit plus a grace period (10 \%, at least 5 s) is stopped by the
+worker's time limit, and one still alive 10 s after that is terminated
+by \code{\link[=g3_job_status]{g3_job_status()}} and reported as \code{"timed_out"}.}
 }
 \value{
 A \code{g3_job} handle: \code{job_id}, \code{attempt}, \code{dir}, \code{type} and the

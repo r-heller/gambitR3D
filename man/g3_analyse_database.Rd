@@ -78,8 +78,13 @@ error records, the per-game analyses and collection summaries.
 The summary is a list of data frames: \code{counts}, \code{outcomes},
 \code{terminations}, \code{lengths}, \code{platform_use}, \code{platform_use_by_phase},
 \code{transfers}, \code{repeated_positions}, \code{repetition}, \code{opening_groups},
-\code{motifs}, \code{evaluation_missingness} and \code{filters}. Rates carry their
-numerator and denominator. Truncated and unfinished games are their
+\code{motifs}, \code{evaluation_missingness}, \code{rate_intervals} and \code{filters}.
+Rates carry their numerator and denominator, a Wilson score
+interval at the 0.95 level (\code{ci_low}, \code{ci_high}; for shares of actions on the
+game-clustered effective sample size, because actions within a game
+are not independent) and \code{small_sample} (\code{TRUE} when fewer than 30
+games contribute); \code{rate_intervals} states these methods. Truncated
+and unfinished games are their
 own categories, never draws. Opening groups are named descriptively
 from this variant's own first actions; no orthodox opening names are
 used.

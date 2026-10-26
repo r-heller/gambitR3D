@@ -133,7 +133,7 @@ x86_64. The package never touches it on load.
 
 ```r
 env <- file.path(tools::R_user_dir("gambitR3D", "data"), "ml-env")
-g3_setup_ml(env)            # about 800 MB; reports versions and schema match
+g3_setup_ml(env)            # about 820 MB installed; reports versions and schema match
 options(gambitR3D.ml_env = env)
 ```
 

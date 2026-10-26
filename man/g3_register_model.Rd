@@ -24,7 +24,9 @@ artifact paths), \code{base_dir}, \code{manifest_path} (the registry copy) and
 Validates a model manifest (normally the \code{model.json} written next to a
 checkpoint by \code{\link[=g3_train_model]{g3_train_model()}}) and adds it to a local registry. The
 manifest must describe a \code{trained_checkpoint} with complete accepted
-provenance, the current rules hash, action schema and feature schema,
+provenance and a cleared licence (external weights also need a pinned
+revision and SHA-256; see \code{\link[=g3_validate_model]{g3_validate_model()}}), the current rules
+hash, action schema and feature schema,
 and artifacts whose SHA-256 hashes and weights digest match the files on
 disk. Built-in ids cannot be reused, and an id already registered with
 different weights is refused.

@@ -33,7 +33,8 @@
 #'   `manifest` (path of `export-manifest.json`).
 #' @examples
 #' \dontrun{
-#' ex <- gambitR3D::g3_export_model("model:my-checkpoint", base::file.path(base::tempdir(), "export"))
+#' ex <- gambitR3D::g3_export_model("model:my-checkpoint",
+#'                                  base::file.path(base::tempdir(), "export"))
 #' ex$parity$passed
 #' }
 #' @export

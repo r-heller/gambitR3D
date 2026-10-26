@@ -167,6 +167,14 @@ test_that("resuming from a checkpoint reproduces an uninterrupted CPU run exactl
   # A different configuration cannot resume this checkpoint.
   expect_error(g3_train_model(c(utils::modifyList(base, list(batch_size = 8L)), list(resume_from = b1$checkpoint$path)),
                               ds$manifest_path, file.path(dir, "C")), class = "g3_io_error")
+  # A checkpoint whose record lost its configuration hash is refused, not
+  # resumed under the requested configuration.
+  ckf <- file.path(b1$checkpoint$path, "checkpoint.json")
+  rec <- jsonlite::fromJSON(ckf, simplifyVector = FALSE)
+  rec$extra$config_hash <- NULL
+  writeLines(jsonlite::toJSON(rec, auto_unbox = TRUE, digits = NA, null = "null"), ckf)
+  expect_error(g3_train_model(c(base, list(resume_from = b1$checkpoint$path)), ds$manifest_path, file.path(dir, "D")),
+               "no training-configuration hash", class = "g3_io_error")
 })
 
 test_that("a trained checkpoint plays legal actions in every mode", {
@@ -202,6 +210,23 @@ test_that("a trained checkpoint plays legal actions in every mode", {
   an <- g3_analyse_position(st, paste0("model:", id), budget = list(simulations = 8L))
   expect_s3_class(an, "g3_position_analysis")
   expect_setequal(an$alternatives$action_id, legal)
+  # Game analysis and coaching with the model given as an id: model budget
+  # fields accepted, revision recorded, WDL views filled, model wording.
+  g <- g3_new_game()
+  for (a in c("m:W:0:1-W:0:2", "m:B:2:2-B:2:1")) g <- g3_game_apply(g, a)
+  ga <- g3_analyse_game(g, paste0("model:", id), budget = list(simulations = 4L))
+  e <- ga$evaluations
+  expect_identical(ga$provenance$model_revision, run$model$weights_digest_final)
+  expect_true(all(e$model_revision == run$model$weights_digest_final))
+  expect_identical(unique(e$score_kind), "model_value")
+  expect_false(anyNA(e$expected_score_white))
+  expect_identical(unique(e$expected_score_kind), "model_wdl")
+  expect_equal(e$score_white, ifelse(e$side == "white", e$score_mover, -e$score_mover))
+  expect_equal(e$expected_score_mover, (1 + e$raw_score) / 2, tolerance = 1e-6)
+  cg <- g3_coach_game(g, paste0("model:", id), budget = list(simulations = 4L), max_exercises = 0L)
+  expect_identical(cg$evaluator$model_revision, run$model$weights_digest_final)
+  expect_true(any(grepl("4 MCTS simulations", cg$limitations, fixed = TRUE)))
+  expect_false(any(grepl("heuristic units", cg$limitations, fixed = TRUE)))
 })
 
 test_that("self-play records truncation honestly and exports keep parity", {

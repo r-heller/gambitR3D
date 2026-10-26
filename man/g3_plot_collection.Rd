@@ -14,13 +14,22 @@ g3_plot_collection(x, metric = "outcome")
 phase).}
 }
 \value{
-A \code{ggplot} object with attributes \code{g3_plot_data} and
-\code{g3_plot_meta} (\code{metric}, \code{n_games}, \code{denominator_label}, \code{empty}).
+A \code{ggplot} object with attributes \code{g3_plot_data} (with \code{share},
+\code{ci_low}, \code{ci_high} for rates) and \code{g3_plot_meta} (\code{metric},
+\code{n_games}, \code{denominator_label}, \code{empty}, \code{small_sample},
+\code{small_sample_threshold}, \code{conf_level}).
 }
 \description{
 Outcome, termination, game-length and platform-use views of a set of
 analysed games, always with counts and denominators. Truncated and
 unfinished games are separate categories, never draws.
+}
+\details{
+Shares are drawn with Wilson score intervals at the 0.95 level: for
+outcomes and terminations with games as the independent units, for
+platform use with the game-clustered effective sample size (actions
+within a game are not independent). With fewer than 30 analysed games
+the caption warns that the shares are unstable.
 }
 \examples{
 \dontshow{if (requireNamespace("ggplot2", quietly = TRUE) && requireNamespace("viridisLite", quietly = TRUE)) withAutoprint(\{ # examplesIf}

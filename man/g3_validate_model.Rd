@@ -39,9 +39,20 @@ and optional resource and runtime requirements. Reference candidates
 fail with "adaptation required"; an untrained architecture fails for
 play.
 }
+\details{
+The licence status must be \code{"project_code"} or \code{"project_generated"}
+(this package's code, or weights trained locally from generated data) or
+\code{"cleared"}. A manifest whose provenance declares external weights
+(\code{external_weights} other than \code{"none"}) is usable only with an exact
+source revision (a full commit id), the SHA-256 of the external artefact
+(as \code{external_weights = list(source, revision, sha256)}, or
+\code{source$revision} and \code{source$artifact_sha256}) and a cleared licence;
+otherwise the \code{provenance} check fails and names what is missing.
+}
 \examples{
 # Reference candidates are listed but cannot play this game.
-v <- gambitR3D::g3_validate_model("amanm10000/chess-policy-net", "experimental-v0.1", error = FALSE)
+v <- gambitR3D::g3_validate_model("amanm10000/chess-policy-net", "experimental-v0.1",
+                                  error = FALSE)
 v$valid
 v$checks[v$checks$status == "fail", ]
 }

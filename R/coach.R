@@ -270,17 +270,21 @@ print.g3_explanation <- function(x, ...) {
 #' positions with [g3_create_exercises()].
 #'
 #' Values are heuristic units from the side to act's perspective (search)
-#' or the model's declared value kind; they are not centipawns, accuracy
-#' or ratings. A model evaluator is used only when a validated model
-#' runtime is available; otherwise a `g3_incompatible_model` condition is
-#' raised (no substitute is used).
+#' or the model's declared value kind (MCTS Q values or model values
+#' p(win) - p(loss), or policy probabilities); they are not centipawns,
+#' accuracy or ratings, and the sentences and limitations say which kind
+#' and budget were used. A model evaluator is used only when a validated
+#' model runtime is available; otherwise a `g3_incompatible_model`
+#' condition is raised (no substitute is used).
 #'
 #' @param game A `g3_game`.
 #' @param evaluator `"search"` (default) or a model agent (`"model:<id>"`
 #'   or a `g3_model`), dispatched through [g3_analyse_position()].
 #' @param budget Search budget per analysed position, as for
 #'   [g3_analyse_position()]; default `list(nodes = 2000L)`. A critical
-#'   decision also spends one reply search with the same budget.
+#'   decision also spends one reply search with the same budget. With a
+#'   model evaluator the model fields `mode` and `simulations` are accepted
+#'   as in [g3_analyse_game()]; the limitations then describe that mode.
 #' @param sides Which sides' decisions to review.
 #' @param plies Optional integer vector of action plies (1 = first
 #'   action) to review; `NULL` reviews all.
@@ -340,7 +344,16 @@ g3_coach_game <- function(game, evaluator = "search", budget = list(nodes = 2000
   if (!is_model && !identical(evaluator, "search")) {
     .g3_abort("g3_incompatible_model", "Coaching supports evaluator = 'search' or a model agent.")
   }
-  b <- .g3_budget(budget)
+  b <- .g3_an_budget(budget, is_model)
+  # A model evaluator is resolved once: its revision is recorded, and a
+  # network model is described by its effective mode settings (the
+  # built-in search registered as a model is described as the search).
+  mobj <- if (is_model) tryCatch(.g3_model_resolve(evaluator), g3_error = function(e) NULL)
+  search_like <- !is_model || (!is.null(mobj) && identical(mobj$manifest$kind, "search"))
+  ms <- if (!is.null(mobj) && !search_like) tryCatch(.g3_model_play_settings(mobj, b), g3_error = function(e) NULL)
+  # Model sentences replace the depth/node sentences unless the mode is the
+  # network-ordered alpha-beta search.
+  cost <- if (!is.null(ms) && ms$mode != "ordering") .g3_coach_model_cost(ms, lang)
   tabs <- .g3_tables()
   line <- .g3_active_line(game$events)
   ids <- game$events$action_id[line]
@@ -364,7 +377,7 @@ g3_coach_game <- function(game, evaluator = "search", budget = list(nodes = 2000
     kind = if (is_model) "model" else "search",
     model_id = if (!is_model) NA_character_ else if (is.character(evaluator)) sub("^model:", "", evaluator) else
       as.character(evaluator$model_id %||% NA_character_),
-    model_revision = NA_character_
+    model_revision = if (is.null(mobj)) NA_character_ else .g3_an_model_revision(mobj, "")
   )
   stop_reason <- "completed"
   done <- 0L
@@ -374,7 +387,7 @@ g3_coach_game <- function(game, evaluator = "search", budget = list(nodes = 2000
       break
     }
     res <- .g3_review_decision(states[[k]], ids[[k]], k + base_ply, evaluator, b, max_candidates,
-                               threshold, lang, tabs)
+                               threshold, lang, tabs, cost = cost)
     rows[[length(rows) + 1L]] <- res$row
     claims[[length(claims) + 1L]] <- res$claims
     evidence <- c(evidence, res$evidence)
@@ -386,11 +399,20 @@ g3_coach_game <- function(game, evaluator = "search", budget = list(nodes = 2000
   rownames(decisions) <- NULL
   claims_df <- if (length(claims)) do.call(rbind, claims) else .g3_empty_claims()
   rownames(claims_df) <- NULL
-  limitations <- c(
-    .g3_tr("limit.candidates", lang, k = max_candidates),
-    .g3_tr("limit.search", lang, nodes = b$nodes, depth = b$depth),
-    .g3_tr("limit.units", lang)
-  )
+  # Interpretation limits that match the evaluator: search depth and
+  # heuristic units for the search, the mode budget and value units for a
+  # network model.
+  limitations <- .g3_tr("limit.candidates", lang, k = max_candidates)
+  if (search_like) {
+    limitations <- c(limitations, .g3_tr("limit.search", lang, nodes = b$nodes, depth = b$depth), .g3_tr("limit.units", lang))
+  } else if (!is.null(ms)) {
+    limitations <- c(limitations, switch(
+      ms$mode,
+      mcts = .g3_tr("limit.model_mcts", lang, simulations = ms$simulations),
+      policy = .g3_tr("limit.model_policy", lang),
+      ordering = .g3_tr("limit.model_ordering", lang, nodes = format(ms$nodes, scientific = FALSE), depth = ms$depth)
+    ), if (ms$mode != "ordering") .g3_tr("limit.model_units", lang))
+  }
   if (is_model) limitations <- c(limitations, .g3_tr("limit.model", lang))
   review <- structure(
     list(
@@ -426,8 +448,11 @@ g3_coach_game <- function(game, evaluator = "search", budget = list(nodes = 2000
   }
   # Overall summary claim.
   n_crit <- sum(decisions$critical)
-  summ_items <- list(.g3_claim("searched", "exact_at_depth", "summary", "review.summary", lang,
-                               n = nrow(decisions), k = n_crit, nodes = b$nodes))
+  summ_items <- list(if (is.null(cost)) {
+    .g3_claim("searched", "exact_at_depth", "summary", "review.summary", lang, n = nrow(decisions), k = n_crit, nodes = b$nodes)
+  } else {
+    .g3_claim("searched", "exact_at_depth", "summary", "review.summary_model", lang, n = nrow(decisions), k = n_crit, cost = cost)
+  })
   if (is_model) {
     summ_items[[2L]] <- .g3_claim("searched", "exact_at_depth", "summary", "review.evaluator_model", lang,
                                   model = eval_info$model_id,
@@ -437,6 +462,15 @@ g3_coach_game <- function(game, evaluator = "search", budget = list(nodes = 2000
   review$claims <- rbind(review$claims, summ)
   rownames(review$claims) <- NULL
   review
+}
+
+# Per-position cost of a network model in the review's language.
+#' @noRd
+.g3_coach_model_cost <- function(ms, lang) {
+  switch(ms$mode,
+         mcts = .g3_tr("item.budget_mcts", lang, simulations = ms$simulations),
+         policy = .g3_tr("item.budget_policy", lang),
+         ordering = .g3_tr("item.budget_ordering", lang, nodes = format(ms$nodes, scientific = FALSE), depth = ms$depth))
 }
 
 #' @noRd
@@ -455,7 +489,8 @@ g3_coach_game <- function(game, evaluator = "search", budget = list(nodes = 2000
 # Review one decision: the position `state` before action `played` at
 # action ply `ply`.
 #' @noRd
-.g3_review_decision <- function(state, played, ply, evaluator, b, max_candidates, threshold, lang, tabs) {
+.g3_review_decision <- function(state, played, ply, evaluator, b, max_candidates, threshold, lang, tabs,
+                                cost = NULL) {
   side <- state$side
   core <- .g3_core(state, tabs)
   ctx <- .g3_ctx(core, tabs)
@@ -563,32 +598,50 @@ g3_coach_game <- function(game, evaluator = "search", budget = list(nodes = 2000
   }
   row$critical <- !is.na(reason)
   row$critical_reason <- reason
+  # A network model (MCTS or policy mode) has no search depth or node count
+  # to report: its sentences name the model budget instead.
+  model_text <- !is.null(cost)
   if (!row$critical) {
-    items[[length(items) + 1L]] <- .g3_claim(
-      "searched", "exact_at_depth", "comparison", "review.not_critical", lang,
-      n = nrow(alt), depth = an$depth, nodes = an$cost$nodes,
-      completeness = .g3_term(paste0("completeness.", an$completeness), lang),
-      evidence_id = ev_id("analysis")
-    )
+    items[[length(items) + 1L]] <- if (model_text) {
+      .g3_claim("searched", "exact_at_depth", "comparison", "review.not_critical_model", lang,
+                n = nrow(alt), cost = cost, evidence_id = ev_id("analysis"))
+    } else {
+      .g3_claim(
+        "searched", "exact_at_depth", "comparison", "review.not_critical", lang,
+        n = nrow(alt), depth = an$depth, nodes = an$cost$nodes,
+        completeness = .g3_term(paste0("completeness.", an$completeness), lang),
+        evidence_id = ev_id("analysis")
+      )
+    }
     return(list(row = row, claims = .g3_claims_df(items, ply, side, prefix = paste0("p", ply, "_")),
                 evidence = evidence, evaluator_info = ei))
   }
   # Critical decision: comparison, verified lines, mate proofs, heuristics.
   sidew <- .g3_color_word(side, lang)
-  items[[length(items) + 1L]] <- .g3_claim(
-    "searched", "exact_at_depth", "comparison", "review.compare", lang,
-    best = row$best_label, best_score = .g3_fmt_score(row$best_score, row$score_kind_best, row$best_mate_in, lang),
-    played = row$played_label,
-    played_score = .g3_fmt_score(row$played_score, row$score_kind_played, row$played_mate_in, lang),
-    side = sidew, n = nrow(alt), depth = an$depth, nodes = an$cost$nodes,
-    completeness = .g3_term(paste0("completeness.", an$completeness), lang),
-    evidence_id = ev_id("analysis")
-  )
-  if (identical(reason, "value_gap")) {
-    items[[length(items) + 1L]] <- .g3_claim(
-      "searched", "exact_at_depth", "comparison", "review.gap", lang,
-      gap = round(row$gap), side = sidew, depth = an$depth, evidence_id = ev_id("analysis")
+  best_txt <- .g3_fmt_score(row$best_score, row$score_kind_best, row$best_mate_in, lang)
+  played_txt <- .g3_fmt_score(row$played_score, row$score_kind_played, row$played_mate_in, lang)
+  items[[length(items) + 1L]] <- if (model_text) {
+    .g3_claim("searched", "exact_at_depth", "comparison", "review.compare_model", lang,
+              best = row$best_label, best_score = best_txt, played = row$played_label, played_score = played_txt,
+              side = sidew, n = nrow(alt), cost = cost, evidence_id = ev_id("analysis"))
+  } else {
+    .g3_claim(
+      "searched", "exact_at_depth", "comparison", "review.compare", lang,
+      best = row$best_label, best_score = best_txt, played = row$played_label, played_score = played_txt,
+      side = sidew, n = nrow(alt), depth = an$depth, nodes = an$cost$nodes,
+      completeness = .g3_term(paste0("completeness.", an$completeness), lang),
+      evidence_id = ev_id("analysis")
     )
+  }
+  if (identical(reason, "value_gap")) {
+    items[[length(items) + 1L]] <- if (identical(row$score_kind_best, "heuristic")) {
+      .g3_claim("searched", "exact_at_depth", "comparison", "review.gap", lang,
+                gap = round(row$gap), side = sidew, depth = an$depth, evidence_id = ev_id("analysis"))
+    } else {
+      .g3_claim("searched", "exact_at_depth", "comparison", "review.gap_model", lang,
+                gap = format(signif(row$gap, 3)), side = sidew, kind = .g3_kind_word(row$score_kind_best, lang),
+                evidence_id = ev_id("analysis"))
+    }
   }
   # Best line: the analysis PV, replayed through the engine before display.
   if (length(an$pv) && identical(an$pv[1L], row$best_action_id)) {
@@ -745,7 +798,7 @@ g3_coach_game <- function(game, evaluator = "search", budget = list(nodes = 2000
 print.g3_coach_review <- function(x, ...) {
   d <- x$decisions
   cat("<g3_coach_review> game ", x$game_id, ": ", nrow(d), " decisions reviewed, ",
-      sum(d$critical), " critical (evaluator ", x$evaluator$id, ", ", x$budget$nodes, " nodes per position)\n",
+      sum(d$critical), " critical (evaluator ", x$evaluator$id, ", ", .g3_an_budget_text(x$budget), " per position)\n",
       sep = "")
   crit <- x$claims[x$claims$ply %in% d$ply[d$critical] & x$claims$type != "legal_fact", , drop = FALSE]
   for (i in seq_len(min(nrow(crit), 12L))) {

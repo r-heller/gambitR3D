@@ -237,3 +237,71 @@ test_that("a missed mate in two is proven exhaustively before it is called force
   expect_identical(ev$method, "exhaustive_and_or")
   expect_identical(ev$replies, 8L)
 })
+
+# Stand-in for a network model's candidate analysis (MCTS mode): Q values
+# and visit counts rise along the legal-action order, so the last legal
+# candidate is the model's choice. No Python is needed.
+fake_mcts_analysis <- function(state, evaluator = NULL, budget = NULL, actions = NULL) {
+  ids <- g3_legal_actions(state)$action_id
+  n <- length(ids)
+  q <- seq(-0.6, 0.6, length.out = n)
+  visits <- seq_len(n)
+  alt <- data.frame(action_id = ids, label = ids, type = "move", score = q, score_kind = "mcts_q", mate_in = NA_integer_,
+                    bound = "model", rank = as.integer(order(order(-visits))), probability = 1 / n, logit = 0,
+                    visits = as.integer(visits), q = q, stringsAsFactors = FALSE)
+  if (!is.null(actions)) {
+    alt <- alt[alt$action_id %in% actions, , drop = FALSE]
+    alt$rank <- as.integer(rank(alt$rank, ties.method = "first"))
+  }
+  structure(list(
+    alternatives = alt, root_score = 0.1, score_kind = "model_value", perspective = "side_to_act", side = state$side,
+    pv = alt$action_id[alt$rank == 1L], pv_labels = character(), depth = 3L, completeness = "complete",
+    cost = list(nodes = budget$simulations %||% 32, elapsed_ms = 1),
+    provenance = list(model_id = "fake-net", weights_digest = "rev-x", budget = budget, mode = "mcts"),
+    wdl = c(win = 0.4, draw = 0.3, loss = 0.3), expected_score = 0.55, value_source = "network"
+  ), class = "g3_position_analysis")
+}
+
+test_that("model-assisted coaching states the model's budget and units, not search text (F14, F17)", {
+  local_mocked_bindings(g3_analyse_position = fake_mcts_analysis, .package = "gambitR3D")
+  m <- structure(list(model_id = "fake-net", manifest = list(kind = "trained_checkpoint", weights_digest = "rev-x")),
+                 class = "g3_model")
+  g <- g3_new_game()
+  for (id in c("m:W:0:1-W:0:2", "m:B:2:2-B:2:1", "m:W:1:1-W:1:3")) g <- g3_game_apply(g, id)
+  # Model budget fields are accepted for coaching (they were refused before).
+  rev <- g3_coach_game(g, evaluator = m, budget = list(simulations = 8L), max_exercises = 0L, threshold = 0.05)
+  expect_identical(rev$budget$simulations, 8L)
+  expect_identical(rev$evaluator$model_revision, "rev-x")
+  lim <- rev$limitations
+  expect_true(any(grepl("8 MCTS simulations", lim, fixed = TRUE)))
+  expect_true(any(grepl("p(win) - p(loss)", lim, fixed = TRUE)))
+  expect_true(any(grepl("model estimates", lim, fixed = TRUE)))
+  expect_false(any(grepl("heuristic units", lim, fixed = TRUE)))
+  expect_false(any(grepl("Search limit", lim, fixed = TRUE)))
+  # Decision sentences name the model budget and value kind, never heuristic units or nodes.
+  txt <- rev$claims$text[rev$claims$type == "searched"]
+  expect_true(length(txt) > 0L)
+  expect_false(any(grepl("heuristic units|nodes", txt)))
+  expect_true(all(c("review.summary_model") %in% rev$claims$template))
+  expect_true(any(rev$claims$template %in% c("review.compare_model", "review.not_critical_model")))
+  expect_true(any(rev$decisions$critical_reason %in% "value_gap"))
+  expect_true("review.gap_model" %in% rev$claims$template)
+  expect_true(any(grepl("MCTS Q value", txt, fixed = TRUE)))
+  # Gaps in model values are not rounded to whole heuristic units.
+  gap_txt <- txt[rev$claims$template[rev$claims$type == "searched"] == "review.gap_model"]
+  expect_false(any(grepl(" 0 lower", gap_txt, fixed = TRUE)))
+  # German templates exist for the same sentences.
+  de <- g3_coach_game(g, evaluator = m, budget = list(simulations = 8L), max_exercises = 0L, threshold = 0.05, lang = "de")
+  expect_true(any(grepl("8 MCTS-Simulationen", de$limitations, fixed = TRUE)))
+  expect_false(any(grepl("heuristische Einheiten", de$limitations, fixed = TRUE)))
+  expect_identical(.g3_coach_catalogue_problems("de"), character())
+  # The policy and ordering modes get their own limitation lines.
+  pol <- g3_coach_game(g, evaluator = m, budget = list(mode = "policy"), max_exercises = 0L)
+  expect_true(any(grepl("one network evaluation", pol$limitations, fixed = TRUE)))
+  ord <- g3_coach_game(g, evaluator = m, budget = list(mode = "ordering", nodes = 300L), max_exercises = 0L)
+  expect_true(any(grepl("ordered by the network", ord$limitations, fixed = TRUE)))
+  # Search coaching still refuses model fields, and unknown fields stay refused.
+  expect_error(g3_coach_game(g, budget = list(simulations = 8L), max_exercises = 0L), class = "g3_budget_exceeded")
+  expect_error(g3_coach_game(g, evaluator = m, budget = list(rollouts = 8L), max_exercises = 0L),
+               class = "g3_budget_exceeded")
+})

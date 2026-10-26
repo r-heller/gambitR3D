@@ -190,3 +190,56 @@ test_that("splits keep games and groups whole and audit shared positions", {
   expect_true(is.na(sp3$audit$shared_history_contexts))
   expect_error(g3_split_games(gs, c(0.5, 0.5)), class = "g3_invalid_state")
 })
+
+test_that("collection rates carry Wilson intervals and a small-sample flag (F18)", {
+  # Wilson score interval against hand-computed values (z = qnorm(0.975)).
+  w <- .g3_wilson(c(0, 1, 3, 15), c(1, 1, 3, 30))
+  z <- stats::qnorm(0.975)
+  expect_equal(w$high[1], z^2 / (1 + z^2))
+  expect_equal(w$low[2], 1 / (1 + z^2))
+  expect_equal(c(w$low[4], w$high[4]), c(0.3313, 0.6687), tolerance = 1e-3)
+  expect_true(all(w$low <= c(0, 1, 1, 0.5) & c(0, 1, 1, 0.5) <= w$high))
+  expect_true(is.na(.g3_wilson(0, 0)$low))
+  # Shares of actions use the game-clustered effective sample size.
+  same <- .g3_cluster_rate(c(2, 4, 6), c(10, 20, 30))
+  expect_equal(same$n_eff, 60)
+  het <- .g3_cluster_rate(c(0, 10, 0, 10), c(10, 10, 10, 10))
+  expect_lt(het$n_eff, 40)
+  expect_equal(het$share, 0.5)
+  expect_gt(het$high - het$low, diff(unlist(.g3_wilson(20, 40))))
+  zero <- .g3_cluster_rate(c(0, 0, 0), c(10, 12, 9))
+  expect_equal(zero$n_eff, 3)
+  expect_identical(.g3_cluster_rate(numeric(), numeric())$n_games, 0L)
+  # Summary tables: every rate has its interval and the small-sample flag.
+  run <- g3_analyse_database(collection(), evaluator = "none")
+  s <- run$summary
+  for (tb in c("outcomes", "terminations", "motifs", "platform_use_by_phase")) {
+    d <- s[[tb]]
+    expect_true(all(c("ci_low", "ci_high", "small_sample") %in% names(d)), info = tb)
+    r <- if (tb == "motifs") d$share_of_games else d$share
+    ok <- !is.na(r)
+    expect_true(all(d$ci_low[ok] <= r[ok] & r[ok] <= d$ci_high[ok]), info = tb)
+    expect_true(all(d$ci_low[ok] >= 0 & d$ci_high[ok] <= 1), info = tb)
+  }
+  oc <- s$outcomes
+  expect_equal(oc$ci_low, .g3_wilson(oc$n_games, 4)$low)
+  expect_true(all(oc$small_sample))
+  pu <- s$platform_use
+  expect_true(all(c("share_of_actions_ci_low", "share_of_actions_ci_high", "share_of_actions_effective_n",
+                    "share_of_games_ci_low", "share_of_games_ci_high") %in% names(pu)))
+  expect_lte(pu$share_of_actions_effective_n, pu$total_actions)
+  expect_true(pu$small_sample)
+  ph <- s$platform_use_by_phase
+  expect_identical(ph$n_games[1], 4L)
+  expect_true(all(is.na(ph$ci_low[ph$actions == 0L])))
+  # The method and the threshold are stated with the tables.
+  ri <- s$rate_intervals
+  expect_identical(ri$small_sample_threshold_games, 30L)
+  expect_identical(ri$conf_level, 0.95)
+  expect_match(ri$action_rates, "game-clustered", fixed = TRUE)
+  # Thirty games or more are not flagged.
+  big <- .g3_dbrun_summary(rep(run$results, 8L), list(), 32L, 0L, 0L)
+  expect_false(any(big$outcomes$small_sample))
+  expect_lt(big$outcomes$ci_high[big$outcomes$result == "unfinished"] - big$outcomes$ci_low[big$outcomes$result == "unfinished"],
+            oc$ci_high[oc$result == "unfinished"] - oc$ci_low[oc$result == "unfinished"])
+})

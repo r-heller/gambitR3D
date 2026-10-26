@@ -31,7 +31,8 @@ every action chosen with an exported model.
 }
 \examples{
 \dontrun{
-ex <- gambitR3D::g3_export_model("model:my-checkpoint", base::file.path(base::tempdir(), "export"))
+ex <- gambitR3D::g3_export_model("model:my-checkpoint",
+                                 base::file.path(base::tempdir(), "export"))
 ex$parity$passed
 }
 }

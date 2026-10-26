@@ -151,6 +151,66 @@ test_that("validation rejects rules, artifact, action-schema, task and provenanc
   expect_error(g3_register_model(p, reg), "SHA-256", class = "g3_incompatible_model")
 })
 
+test_that("external weights need a pinned revision, an artefact SHA-256 and a cleared licence", {
+  no_runtime()
+  ck <- withr::local_tempdir()
+  p <- fake_checkpoint(ck, "imported-test")
+  base <- jsonlite::fromJSON(p, simplifyVector = FALSE)
+  as_model <- function(m) .g3_model_obj(m, base_dir = ck, manifest_path = p, source = "file")
+  prov <- function(m) {
+    v <- g3_validate_model(as_model(m), list(task = "play"), error = FALSE)
+    v$checks$detail[v$checks$check == "provenance" & v$checks$status == "fail"]
+  }
+  # Locally generated weights (external_weights "none") stay valid.
+  expect_length(prov(base), 0L)
+  # The audit's hand-made manifest: external weights, no revision, no hash,
+  # licence declared but not cleared.
+  m <- base
+  m$provenance$external_weights <- "amanm10000/chess-policy-net (no revision, no sha256)"
+  m$license <- list(declared = "MIT", status = "declared_not_cleared")
+  d <- prov(m)
+  expect_length(d, 1L)
+  expect_match(d, "exact source revision", fixed = TRUE)
+  expect_match(d, "SHA-256 of the artefact", fixed = TRUE)
+  expect_match(d, "cleared licence", fixed = TRUE)
+  expect_error(g3_validate_model(as_model(m), "experimental-v0.1"), "revision", class = "g3_incompatible_model")
+  mp <- file.path(ck, "model-external.json")
+  writeLines(jsonlite::toJSON(m, auto_unbox = TRUE, pretty = TRUE), mp)
+  reg <- withr::local_tempdir()
+  expect_error(g3_register_model(mp, reg), "provenance", class = "g3_incompatible_model")
+  expect_false(file.exists(file.path(reg, "registry.json")))
+  # A branch name is not an exact revision; a cleared licence alone is not enough.
+  pinned <- list(source = "https://huggingface.co/example/net", revision = "main",
+                 sha256 = .g3_file_sha256(file.path(ck, "weights.safetensors")))
+  m$provenance$external_weights <- pinned
+  m$license$status <- "cleared"
+  expect_match(prov(m), "exact source revision", fixed = TRUE)
+  m$provenance$external_weights$revision <- strrep("ab12", 10L)
+  m$provenance$external_weights$sha256 <- "not-a-hash"
+  expect_match(prov(m), "SHA-256", fixed = TRUE)
+  # Fully pinned and cleared: usable. The revision may also sit in `source`.
+  m$provenance$external_weights$sha256 <- pinned$sha256
+  expect_length(prov(m), 0L)
+  m2 <- m
+  m2$provenance$external_weights <- "example/net safetensors"
+  m2$source <- list(revision = strrep("0f", 20L), artifact_sha256 = pinned$sha256)
+  expect_length(prov(m2), 0L)
+  m2$license$status <- "project_generated"
+  expect_match(prov(m2), "cleared licence", fixed = TRUE)
+  # An uncleared licence is refused for local weights too.
+  m3 <- base
+  m3$license$status <- "declared_not_cleared"
+  expect_match(prov(m3), "is not cleared", fixed = TRUE)
+  # Capabilities do not advertise a model that validation refuses.
+  caps <- .g3_capability_rows(as_model(m3), list(available = TRUE, reason = NA_character_))
+  expect_identical(caps$status[caps$task == "play"], "unavailable")
+  expect_match(caps$reason[caps$task == "play"], "not cleared", fixed = TRUE)
+  # Built-in entries validate as before.
+  expect_true(g3_validate_model("builtin-search", "experimental-v0.1", error = FALSE)$valid)
+  v <- g3_validate_model("builtin-square-transformer", list(task = "training"), error = FALSE)
+  expect_false("provenance" %in% v$checks$check[v$checks$status == "fail"])
+})
+
 test_that("the built-in search is a model-free option through the model interface", {
   no_runtime()
   st <- g3_new_game()$state
@@ -169,4 +229,23 @@ test_that("compatibility reports are deterministic and display preferences canno
   m <- .g3_model_resolve("builtin-square-transformer")
   expect_identical(m$manifest$input_schema$feature_schema_hash, .g3_feature_schema()$hash)
   expect_identical(m$manifest$rules$hash, .g3_tables()$rules_hash)
+})
+
+test_that("a registered model given as an id keeps its weights digest in analysis provenance (F16)", {
+  no_runtime()
+  ck <- withr::local_tempdir()
+  reg <- withr::local_tempdir()
+  withr::local_options(gambitR3D.registry_dir = reg)
+  m <- g3_register_model(fake_checkpoint(ck, "fake-rev"))
+  g <- g3_game_apply(g3_new_game(), "m:W:0:1-W:0:2")
+  r <- g3_analyse_game(g, evaluator = "model:fake-rev")
+  expect_identical(r$provenance$model_revision, m$manifest$weights_digest)
+  expect_true(all(r$evaluations$model_revision == m$manifest$weights_digest))
+  # No runtime here: the scores are missing with the reason, never substituted.
+  expect_true(all(startsWith(r$evaluations$missing_reason, "evaluator_unavailable")))
+  # The cache key follows the revision: other weights, other contexts.
+  ctx <- r$positions$analysis_context_hash
+  m2 <- m
+  m2$manifest$weights_digest <- strrep("e", 64)
+  expect_false(any(g3_analyse_game(g, evaluator = m2)$positions$analysis_context_hash %in% ctx))
 })

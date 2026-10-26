@@ -73,6 +73,13 @@
 #' 512 positions, 600 s, 2 threads, 100 MB) unless larger `limits` are
 #' explicitly authorised.
 #'
+#' A cancelled job or an exceeded time limit is noticed between optimizer
+#' chunks and, while training data are generated, before every position's
+#' teacher search. A stop during data generation ends the run cleanly with
+#' status `"cancelled"` or `"timed_out"`: no worker is started, nothing of
+#' the partial dataset is kept and no checkpoint is written (`model`,
+#' `checkpoint` are `NULL`); resuming regenerates the same seeded data.
+#'
 #' @param config A list; all fields optional: `profile` (`"tiny"`,
 #'   `"research"`), `model_config` (width, layers, heads, mlp_ratio,
 #'   dropout overrides), `seed`, `steps` (total optimizer steps of the run,
@@ -138,6 +145,21 @@ g3_train_model <- function(config = list(), dataset = list(), output_dir) {
   should_stop <- function() {
     (!is.null(ctx) && isTRUE(ctx$should_stop())) || (proc.time()[["elapsed"]] - t_start > lim$max_wall_seconds)
   }
+  stop_reason_now <- function() if (!is.null(ctx) && isTRUE(ctx$cancelled())) "cancelled" else "timed_out"
+  # Resume point: explicit, or the latest checkpoint of this run directory.
+  resume <- cfg$resume_from
+  if (is.null(resume) && !is.null(ctx) && isTRUE(ctx$resume)) resume <- .g3_latest_checkpoint(output_dir)
+  run_id <- cfg$run_id %||% (if (file.exists(file.path(output_dir, "run.json"))) {
+    tryCatch(jsonlite::fromJSON(file.path(output_dir, "run.json"))$run_id, error = function(e) NULL)
+  }) %||% .g3_new_id("run")
+  # Identity and invocation settings do not enter the configuration hash,
+  # so an interrupted run can be resumed under the same hash.
+  cfg_public <- cfg[setdiff(names(cfg), c("ml_env", "registry_dir", "resume_from", "register", "run_id",
+                                          "max_steps_this_run", "model_id", "display_name"))]
+  config_hash <- .g3_hash_object(cfg_public)
+  # Check the resume checkpoint (record, configuration, weights) before any
+  # worker starts.
+  rc <- if (!is.null(resume)) .g3_resume_checkpoint(resume, config_hash) else NULL
   # Dataset.
   t_data0 <- proc.time()[["elapsed"]]
   ds <- if (inherits(dataset, "g3_dataset")) {
@@ -152,23 +174,18 @@ g3_train_model <- function(config = list(), dataset = list(), output_dir) {
     .g3_abort("g3_io_error", "`dataset` must be a dataset path or a list of generation settings.")
   }
   t_data <- proc.time()[["elapsed"]] - t_data0
+  if (inherits(ds, "g3_dataset_stopped")) {
+    # Stopped while generating data (polled per position): end cleanly
+    # without a worker or checkpoint; a resumed run regenerates the data.
+    return(.g3_train_stopped_run(stop_reason_now(), run_id, cfg_public, config_hash, lim, resume, rc, ds,
+                                 output_dir, t_start, t_data))
+  }
   if (ds$counts$records > lim$max_positions) {
     .g3_abort("g3_budget_exceeded", paste0("The dataset has ", ds$counts$records, " positions; the limit is ", lim$max_positions, "."))
   }
   if (!any(vapply(ds$shards, function(s) identical(s$split, "train"), TRUE))) {
     .g3_abort("g3_io_error", "The dataset has no train split.")
   }
-  # Resume point: explicit, or the latest checkpoint of this run directory.
-  resume <- cfg$resume_from
-  if (is.null(resume) && !is.null(ctx) && isTRUE(ctx$resume)) resume <- .g3_latest_checkpoint(output_dir)
-  run_id <- cfg$run_id %||% (if (file.exists(file.path(output_dir, "run.json"))) {
-    tryCatch(jsonlite::fromJSON(file.path(output_dir, "run.json"))$run_id, error = function(e) NULL)
-  }) %||% .g3_new_id("run")
-  # Identity and invocation settings do not enter the configuration hash,
-  # so an interrupted run can be resumed under the same hash.
-  cfg_public <- cfg[setdiff(names(cfg), c("ml_env", "registry_dir", "resume_from", "register", "run_id",
-                                          "max_steps_this_run", "model_id", "display_name"))]
-  config_hash <- .g3_hash_object(cfg_public)
   w <- .g3_worker_start(env_path, threads = cfg$threads,
                         allowed_roots = c(output_dir, dirname(ds$manifest_path), if (!is.null(resume)) dirname(resume)),
                         log_path = file.path(output_dir, sprintf("worker-%s.log", format(Sys.time(), "%Y%m%d-%H%M%OS3"))),
@@ -176,16 +193,8 @@ g3_train_model <- function(config = list(), dataset = list(), output_dir) {
   on.exit(.g3_worker_stop(w), add = TRUE)
   t_worker <- proc.time()[["elapsed"]] - t_start - t_data
   if (!is.null(resume)) {
-    cm <- jsonlite::fromJSON(file.path(resume, "checkpoint.json"), simplifyVector = FALSE)
-    exp <- list(checkpoint.json = .g3_file_sha256(file.path(resume, "checkpoint.json")),
-                weights.safetensors = cm$files$weights.safetensors, optimizer.safetensors = cm$files$optimizer.safetensors)
-    if (!identical(.g3_file_sha256(file.path(resume, "weights.safetensors")), exp$weights.safetensors)) {
-      .g3_abort("g3_io_error", "The resume checkpoint's weights do not match its record (truncated or altered).")
-    }
-    init <- .g3_worker_call(w, "load_checkpoint", list(path = resume, expected = exp, with_optimizer = TRUE), timeout_s = 300)
-    if (!identical(cm$extra$config_hash %||% config_hash, config_hash)) {
-      .g3_abort("g3_io_error", "The checkpoint was produced with a different training configuration; refusing to resume.")
-    }
+    init <- .g3_worker_call(w, "load_checkpoint", list(path = resume, expected = rc$expected, with_optimizer = TRUE),
+                            timeout_s = 300)
   } else {
     mc <- c(list(profile = cfg$profile), cfg$model_config %||% list())
     init <- .g3_worker_call(w, "initialize_model", list(model_config = mc, seed = cfg$seed), timeout_s = 300)
@@ -210,7 +219,7 @@ g3_train_model <- function(config = list(), dataset = list(), output_dir) {
     n <- min(cfg$chunk_steps, remaining)
     if (n == 0L && !last) break
     if (should_stop()) {
-      stop_reason <- if (!is.null(ctx) && isTRUE(ctx$cancelled())) "cancelled" else "timed_out"
+      stop_reason <- stop_reason_now()
       break
     }
     payload <- list(
@@ -238,7 +247,7 @@ g3_train_model <- function(config = list(), dataset = list(), output_dir) {
     w$model_hash <- res$weights_digest_after
     remaining <- remaining - length(res$metrics)
     if (isTRUE(attr(res, "cancelled")) || identical(res$stop_reason, "cancelled")) {
-      stop_reason <- if (!is.null(ctx) && isTRUE(ctx$cancelled())) "cancelled" else "timed_out"
+      stop_reason <- stop_reason_now()
       break
     }
     if (identical(res$stop_reason, "deadline")) {
@@ -322,6 +331,61 @@ g3_train_model <- function(config = list(), dataset = list(), output_dir) {
   .g3_write_run(run, output_dir)
   if (stop_reason != "completed") attr(run, "stop_reason") <- stop_reason
   run
+}
+
+# Run record of a training run stopped while its dataset was being
+# generated: no worker was started and no checkpoint written. Written to
+# run.json (so a resumed attempt keeps the run id) and returned with the
+# stop reason as attribute, as for runs stopped during training.
+#' @noRd
+.g3_train_stopped_run <- function(stop_reason, run_id, cfg_public, config_hash, lim, resume, rc, ds, output_dir,
+                                  t_start, t_data) {
+  step <- as.integer(rc$record$step %||% 0L)
+  out_mb <- sum(file.size(list.files(output_dir, recursive = TRUE, full.names = TRUE)), na.rm = TRUE) / 1024^2
+  run <- structure(list(
+    format = .G3_TRAIN_FORMAT, run_id = run_id, kind = "training", status = stop_reason, stop_reason = stop_reason,
+    config = cfg_public, config_hash = config_hash,
+    dataset = list(status = "incomplete", records_generated = ds$records_generated,
+                   note = "Data generation was stopped; nothing was written and a resumed run regenerates the same data."),
+    model = NULL, steps = list(start = step, end = step, completed = 0L), resumed_from = resume,
+    metrics = .g3_metrics_df(list()), checks = NULL, evaluation = NULL, checkpoint = NULL,
+    model_id = NA_character_, registered_model = NULL, environment = NULL,
+    timings = list(total_seconds = proc.time()[["elapsed"]] - t_start, dataset_seconds = t_data,
+                   worker_start_seconds = 0, train_seconds = 0, positions_per_second = NA_real_),
+    output_mb = out_mb, limits = lim,
+    limitations = "Stopped while generating training data: no worker was started and no checkpoint was written."
+  ), class = "g3_run_manifest")
+  .g3_write_run(run, output_dir)
+  attr(run, "stop_reason") <- stop_reason
+  run
+}
+
+# Read and check a checkpoint before resuming from it: its record must be
+# readable and carry the configuration hash it was trained under, that hash
+# must equal this run's, and the weights must match the recorded hash. A
+# checkpoint without a configuration hash is refused, never assumed to
+# match. Returns the record and the file hashes the worker must verify.
+#' @noRd
+.g3_resume_checkpoint <- function(resume, config_hash) {
+  f <- file.path(resume, "checkpoint.json")
+  cm <- if (file.exists(f)) tryCatch(jsonlite::fromJSON(f, simplifyVector = FALSE), error = function(e) NULL)
+  if (!is.list(cm)) .g3_abort("g3_io_error", paste0("No readable checkpoint record (checkpoint.json) in ", resume, "."))
+  ch <- cm$extra$config_hash
+  if (!is.character(ch) || length(ch) != 1L || is.na(ch) || !nzchar(ch)) {
+    .g3_abort("g3_io_error", paste0("The checkpoint records no training-configuration hash, so its configuration ",
+                                    "cannot be verified; refusing to resume."), reason = "config_hash_missing")
+  }
+  if (!identical(ch, config_hash)) {
+    .g3_abort("g3_io_error", "The checkpoint was produced with a different training configuration; refusing to resume.",
+              reason = "config_hash_mismatch")
+  }
+  exp <- list(checkpoint.json = .g3_file_sha256(f),
+              weights.safetensors = cm$files$weights.safetensors, optimizer.safetensors = cm$files$optimizer.safetensors)
+  wf <- file.path(resume, "weights.safetensors")
+  if (!file.exists(wf) || !identical(.g3_file_sha256(wf), exp$weights.safetensors)) {
+    .g3_abort("g3_io_error", "The resume checkpoint's weights do not match its record (truncated or altered).")
+  }
+  list(record = cm, expected = exp)
 }
 
 #' @noRd

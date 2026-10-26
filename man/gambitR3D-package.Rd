@@ -36,5 +36,10 @@ Authors:
   \item Raban Heller \email{raban.heller@uni-ulm.de} (\href{https://orcid.org/0000-0001-8006-9742}{ORCID})
 }
 
+Other contributors:
+\itemize{
+  \item three.js authors (bundled three.js library, see inst/app/www/vendor/PROVENANCE.md) [contributor, copyright holder]
+}
+
 }
 \keyword{internal}

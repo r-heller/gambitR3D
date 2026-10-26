@@ -65,6 +65,16 @@ test_that("a game report is self-contained, escaped and consistent with its tabl
   mj <- jsonlite::fromJSON(file.path(dir, "rep", "manifest.json"))
   expect_identical(mj$files$sha256, f$sha256)
   expect_true(mj$offline)
+  # Exported paths are relative to the report directory: no local paths in
+  # the manifest or any exported file (the returned list keeps the local one).
+  expect_identical(mj$report, "report.html")
+  expect_true(is.null(mj$pdf) || is.na(mj$pdf))
+  expect_identical(normalizePath(out$report), normalizePath(file.path(dir, "rep", "report.html")))
+  local <- c(normalizePath(dir), dir, normalizePath(tempdir()), path.expand("~"))
+  for (ff in c("manifest.json", f$file)) {
+    txt <- paste(readLines(file.path(dir, "rep", ff), warn = FALSE), collapse = "\n")
+    for (l in unique(local)) expect_false(grepl(l, txt, fixed = TRUE), info = paste(ff, l))
+  }
   expect_error(g3_export_analysis_report(r, file.path(dir, "rep")), class = "g3_io_error")
   expect_error(g3_export_analysis_report(list(), file.path(dir, "x")), class = "g3_invalid_state")
 })

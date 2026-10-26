@@ -25,7 +25,9 @@ or a \code{g3_model}), dispatched through \code{\link[=g3_analyse_position]{g3_a
 
 \item{budget}{Search budget per analysed position, as for
 \code{\link[=g3_analyse_position]{g3_analyse_position()}}; default \code{list(nodes = 2000L)}. A critical
-decision also spends one reply search with the same budget.}
+decision also spends one reply search with the same budget. With a
+model evaluator the model fields \code{mode} and \code{simulations} are accepted
+as in \code{\link[=g3_analyse_game]{g3_analyse_game()}}; the limitations then describe that mode.}
 
 \item{sides}{Which sides' decisions to review.}
 
@@ -80,10 +82,12 @@ positions with \code{\link[=g3_create_exercises]{g3_create_exercises()}}.
 }
 \details{
 Values are heuristic units from the side to act's perspective (search)
-or the model's declared value kind; they are not centipawns, accuracy
-or ratings. A model evaluator is used only when a validated model
-runtime is available; otherwise a \code{g3_incompatible_model} condition is
-raised (no substitute is used).
+or the model's declared value kind (MCTS Q values or model values
+p(win) - p(loss), or policy probabilities); they are not centipawns,
+accuracy or ratings, and the sentences and limitations say which kind
+and budget were used. A model evaluator is used only when a validated
+model runtime is available; otherwise a \code{g3_incompatible_model}
+condition is raised (no substitute is used).
 }
 \examples{
 # A short game reviewed with a small budget (well under a second).

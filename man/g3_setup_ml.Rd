@@ -45,7 +45,9 @@ download.
 }
 \examples{
 \dontrun{
-# Downloads about 200 MB the first time; needs `uv`.
+# Needs `uv`. The first run downloads the locked packages; the installed
+# environment takes about 820 MB on disk (measured on Linux x86-64 with
+# CPU-only torch).
 env <- file.path(tools::R_user_dir("gambitR3D", "data"), "ml-env")
 rep <- gambitR3D::g3_setup_ml(env)
 rep$status

@@ -14,14 +14,19 @@
 #   evaluator = "none"    features only (no score; missing_reason
 #                         "not_requested");
 #   a model evaluator     dispatched to `g3_analyse_position()`; when no model
-#                         runtime exists the score is NA with the reason.
+#                         runtime exists the score is NA with the reason. A
+#                         model id is resolved once, so the analysis records
+#                         and evaluates one revision (its weights digest).
 #
 # Score semantics. Raw scores are the evaluator's output from the side to
 # act's perspective (heuristic units for search, not centipawns; mates are
-# +/-(1e6 - plies)). White and mover views are stored separately. The
-# expected-score columns map heuristic scores through a documented logistic
-# display transform, E = 1 / (1 + exp(-s / 400)), labelled uncalibrated; it
-# is not a probability. Terminal positions use their exact rule result.
+# +/-(1e6 - plies); for a network model its value p(win) - p(loss)). White
+# and mover views are stored separately. The expected-score columns map
+# heuristic scores through a documented logistic display transform,
+# E = 1 / (1 + exp(-s / 400)), labelled uncalibrated; it is not a
+# probability. Model rows take p(win) + 0.5 p(draw) from the model's WDL
+# head instead (a model estimate). Terminal positions use their exact rule
+# result.
 #
 # Evaluation cache. Entries are keyed by an analysis-context hash over the
 # position key, the full repetition record and halfmove counter (the draw
@@ -53,7 +58,10 @@
 #'   `NA` scores with the reason, never a substitute.
 #' @param budget Search budget per position: a list with any of `nodes`
 #'   (default 2000), `time_ms` and `depth` (see [g3_choose_action()]). Only
-#'   node and depth budgets give run-to-run identical results.
+#'   node and depth budgets give run-to-run identical results. With a model
+#'   evaluator the model fields `mode` (`"mcts"`, `"policy"` or
+#'   `"ordering"`) and `simulations` (MCTS simulations per position) are
+#'   accepted too; other fields are refused.
 #' @param cache Optional environment used as an evaluation cache, shared
 #'   across calls (for example `new.env()`). Entries are keyed by the full
 #'   analysis context (see Details in the source header and
@@ -73,7 +81,10 @@
 #'   * `positions`: one row per position (plies 0..n) of features.
 #'   * `evaluations`: one row per position with raw, White and mover scores,
 #'     expected scores, best and played alternatives, move losses and
-#'     `missing_reason`.
+#'     `missing_reason`. For a network model the raw score is the model's
+#'     value (`score_kind` `"model_value"`) and the expected score is
+#'     p(win) + 0.5 p(draw) from its WDL head (`expected_score_kind`
+#'     `"model_wdl"`), not the logistic map.
 #'   * `tactics`: one row per tactical label with `claim_strength`.
 #'   * `events`: session events (resign, draw_agreed, truncated, takeback).
 #'   * `mobility`, `platforms`, `pieces`, `squares`: long per-position
@@ -103,7 +114,7 @@ g3_analyse_game <- function(game, evaluator = "search", budget = list(nodes = 20
   t_start <- proc.time()[["elapsed"]]
   game <- .g3_an_as_game(game)
   ev <- .g3_an_evaluator(evaluator)
-  b <- .g3_budget(budget)
+  b <- .g3_an_budget(budget, ev$kind == "model")
   if (is.null(cache)) cache <- new.env(hash = TRUE, parent = emptyenv())
   if (!is.environment(cache)) .g3_abort("g3_invalid_state", "`cache` must be an environment or NULL.")
   if (!is.null(stop_check) && !is.function(stop_check)) {
@@ -294,21 +305,75 @@ print.g3_analysis <- function(x, ...) {
                 object = "search"))
   }
   if (inherits(evaluator, "g3_model") || (is.character(evaluator) && length(evaluator) == 1L && grepl("^model", evaluator))) {
+    obj <- evaluator
+    if (is.character(evaluator)) {
+      # Resolve the registry entry so that its revision is recorded (and
+      # evaluated) for the whole analysis. An unknown id stays a string: its
+      # positions then get NA scores with the reason.
+      obj <- tryCatch(.g3_model_resolve(evaluator), g3_error = function(e) evaluator)
+    }
     id <- if (is.character(evaluator)) evaluator else paste0("model:", evaluator$model_id %||% evaluator$id %||% "unnamed")
-    rev <- if (is.character(evaluator)) NA_character_ else
-      as.character(evaluator$revision %||% evaluator$sha256 %||% evaluator$hash %||% .g3_hash_object(list(id = id)))
+    rev <- if (is.character(obj)) NA_character_ else .g3_an_model_revision(obj, id)
     return(list(id = id, kind = "model", version = rev, model_revision = rev, score_unit = NA_character_,
-                scale_id = paste(id, rev, sep = "|"), object = evaluator))
+                scale_id = paste(id, rev, sep = "|"), object = obj))
   }
   .g3_abort("g3_incompatible_model", paste0("Unknown evaluator: ", format(evaluator)[1L],
                                             ". Use 'search', 'none' or a registered model."))
 }
 
+# Revision of a model object: an explicit revision, the weights digest of a
+# trained checkpoint, or (built-in entries have no weights) a digest of the
+# manifest.
+#' @noRd
+.g3_an_model_revision <- function(model, id) {
+  m <- if (is.list(model$manifest)) model$manifest else NULL
+  rev <- model$revision %||% m$weights_digest %||% m$revision %||% model$sha256 %||% model$hash
+  if (is.null(rev) && !is.null(m)) rev <- .g3_hash_object(m)
+  as.character(rev %||% .g3_hash_object(list(id = id)))[1L]
+}
+
+# Model budget fields accepted next to the search budget when the
+# evaluator is a model (see g3_choose_action() for model agents).
+.G3_AN_MODEL_BUDGET <- c("mode", "simulations")
+
+# Analysis and coaching budget: the search budget (nodes, time_ms, depth),
+# plus `mode` and `simulations` for model evaluators. Unknown fields are
+# rejected.
+#' @noRd
+.g3_an_budget <- function(budget, is_model = FALSE) {
+  if (!isTRUE(is_model) || !is.list(budget) || is.null(names(budget))) return(.g3_budget(budget))
+  mf <- budget[intersect(names(budget), .G3_AN_MODEL_BUDGET)]
+  b <- .g3_budget(budget[setdiff(names(budget), .G3_AN_MODEL_BUDGET)])
+  if (!is.null(mf$mode)) {
+    if (!is.character(mf$mode) || length(mf$mode) != 1L || !mf$mode %in% c("policy", "ordering", "mcts")) {
+      .g3_abort("g3_budget_exceeded", "Model mode must be 'policy', 'ordering' or 'mcts'.")
+    }
+    b$mode <- mf$mode
+  }
+  if (!is.null(mf$simulations)) {
+    s <- suppressWarnings(as.integer(mf$simulations))
+    if (length(s) != 1L || is.na(s) || s < 1L) .g3_abort("g3_budget_exceeded", "`simulations` must be a positive integer.")
+    b$simulations <- s
+  }
+  b
+}
+
+# The budget as recorded in cache keys, run configurations and analysis ids.
+# Model fields are added only when given, so search keys are unchanged.
+#' @noRd
+.g3_an_budget_key <- function(b) {
+  c(list(nodes = format(b$nodes, scientific = FALSE), time_ms = format(b$time_ms), depth = b$depth),
+    if (!is.null(b$mode)) list(mode = b$mode), if (!is.null(b$simulations)) list(simulations = b$simulations))
+}
+
 #' @noRd
 .g3_an_budget_text <- function(b) {
+  num <- function(x) suppressWarnings(as.numeric(x))
   parts <- c(
-    if (is.finite(b$nodes)) paste0(format(b$nodes, scientific = FALSE), " nodes"),
-    if (is.finite(b$time_ms)) paste0(format(b$time_ms), " ms"),
+    if (!is.null(b$mode)) paste0("model mode ", b$mode),
+    if (!is.null(b$simulations)) paste0(b$simulations, " simulations"),
+    if (is.finite(num(b$nodes))) paste0(format(num(b$nodes), scientific = FALSE), " nodes"),
+    if (is.finite(num(b$time_ms))) paste0(format(num(b$time_ms)), " ms"),
     paste0("max depth ", b$depth)
   )
   paste(parts, collapse = ", ")
@@ -328,7 +393,7 @@ print.g3_analysis <- function(x, ...) {
     evaluator = ev$id,
     evaluator_version = ev$version,
     model_revision = ev$model_revision,
-    budget = list(nodes = format(b$nodes, scientific = FALSE), time_ms = format(b$time_ms), depth = b$depth),
+    budget = .g3_an_budget_key(b),
     precision = "double"
   ))
 }
@@ -410,12 +475,20 @@ print.g3_analysis <- function(x, ...) {
   out$best_kind <- kinds[bi]
   out$best_mate_in <- .g3_an_mate_in(sc[bi])
   out$expected_score_mover <- exp_s[bi]
+  if (!is.null(ent$value)) {
+    # Model network: the position's raw score is the model's value for the
+    # side to act and its expected score comes from the same WDL head.
+    out$raw_score <- ent$value
+    out$score_kind <- if (is.na(ent$value)) NA_character_ else "model_value"
+    out$expected_score_mover <- ent$value_expected
+  }
   if (!is.na(played)) {
     pi <- match(played, ids)
     out$played_score <- sc[pi]
     out$played_kind <- kinds[pi]
     out$played_mate_in <- .g3_an_mate_in(sc[pi])
-    rk <- rank(-ifelse(is.na(sc), -Inf, sc), ties.method = "min")
+    # The evaluator's own ranking when it has one (MCTS ranks by visits).
+    rk <- if (!is.null(ent$ranks)) ent$ranks[match(ids, ent$ids)] else rank(-ifelse(is.na(sc), -Inf, sc), ties.method = "min")
     out$played_rank <- as.integer(rk[pi])
     if (!is.na(sc[pi]) && kinds[bi] == "heuristic" && kinds[pi] == "heuristic") {
       out$move_loss_raw <- sc[bi] - sc[pi]
@@ -453,15 +526,39 @@ print.g3_analysis <- function(x, ...) {
   }
   alt <- res$alternatives
   unit <- as.character(res$score_unit %||% res$score_kind %||% "model_units")
+  kinds <- if (!is.null(alt$score_kind)) as.character(alt$score_kind) else rep("model", nrow(alt))
+  scores <- as.numeric(alt$score)
   expected <- NULL
   if (all(c("p_win", "p_draw", "p_loss") %in% names(alt))) {
     tot <- alt$p_win + alt$p_draw + alt$p_loss
     expected <- ifelse(abs(tot - 1) < 1e-6, alt$p_win + 0.5 * alt$p_draw, NA_real_)
   }
-  kinds <- if (!is.null(alt$score_kind)) as.character(alt$score_kind) else rep("model", nrow(alt))
-  best <- if (all(is.na(alt$score))) NA_integer_ else which.max(alt$score)
+  # A network evaluator values the position with its WDL head: value
+  # p(win) - p(loss) and expected score p(win) + 0.5 p(draw), both for the
+  # side to act. Per action, only MCTS Q values (means of the same value)
+  # map to an expected score, (1 + Q) / 2; policy probabilities and
+  # ordering-search scores have none (no logistic map for models).
+  network <- identical(res$value_source, "network")
+  value <- NULL
+  value_expected <- NULL
+  if (network) {
+    wdl <- res$wdl
+    ok_wdl <- length(wdl) == 3L && all(is.finite(wdl)) && abs(sum(wdl) - 1) < 1e-6
+    value <- if (is.numeric(res$root_score) && length(res$root_score) == 1L) as.numeric(res$root_score) else NA_real_
+    value_expected <- if (ok_wdl) unname(wdl[["win"]] + 0.5 * wdl[["draw"]]) else NA_real_
+    if (is.null(expected)) expected <- ifelse(kinds == "mcts_q", (1 + scores) / 2, NA_real_)
+  }
+  # The best action is the evaluator's own first choice (for MCTS the most
+  # visited action, not the largest Q of a rarely visited one).
+  ranks <- if (!is.null(alt$rank)) as.integer(alt$rank) else NULL
+  best <- if (all(is.na(scores))) NA_integer_ else if (!is.null(ranks) && any(ranks == 1L & !is.na(scores))) {
+    which(ranks == 1L & !is.na(scores))[1L]
+  } else {
+    which.max(scores)
+  }
   list(
-    ids = alt$action_id, scores = as.numeric(alt$score), kinds = kinds, expected = expected,
+    ids = alt$action_id, scores = scores, kinds = kinds, expected = expected, ranks = if (network) ranks,
+    value = value, value_expected = value_expected,
     best_id = if (is.na(best)) NA_character_ else alt$action_id[best],
     depth = as.integer(res$depth %||% 0L), nodes = as.numeric(res$cost$nodes %||% 0),
     elapsed_ms = as.numeric(res$cost$elapsed_ms %||% el), completeness = as.character(res$completeness %||% "complete"),
@@ -476,8 +573,11 @@ print.g3_analysis <- function(x, ...) {
 .g3_an_finish_evals <- function(e) {
   white <- e$side == "white"
   heur <- !is.na(e$score_kind) & e$score_kind == "heuristic"
-  e$score_mover <- ifelse(heur, e$raw_score, NA_real_)
-  e$score_white <- ifelse(heur, ifelse(white, e$raw_score, -e$raw_score), NA_real_)
+  # Signed side-to-act values: heuristic search scores and model values
+  # (p(win) - p(loss)); each keeps its own unit (see score_unit, scale_id).
+  signed <- heur | (!is.na(e$score_kind) & e$score_kind == "model_value")
+  e$score_mover <- ifelse(signed, e$raw_score, NA_real_)
+  e$score_white <- ifelse(signed, ifelse(white, e$raw_score, -e$raw_score), NA_real_)
   mate <- !is.na(e$score_kind) & e$score_kind == "mate"
   e$mate_in_mover <- ifelse(mate, .g3_an_mate_in(e$raw_score), NA_integer_)
   e$mate_in_white <- as.integer(ifelse(mate, ifelse(white, e$mate_in_mover, -e$mate_in_mover), NA_integer_))
@@ -653,6 +753,8 @@ print.g3_analysis <- function(x, ...) {
 
 #' @noRd
 .g3_an_provenance <- function(info, ev, b, stats, timings) {
+  # The built-in search registered as a model scores like the search.
+  net <- ev$kind == "model" && !(is.list(ev$object) && identical(ev$object$manifest$kind, "search"))
   list(
     analysis_schema = .G3_ANALYSIS_SCHEMA,
     feature_schema = .G3_FEATURE_SCHEMA,
@@ -670,13 +772,20 @@ print.g3_analysis <- function(x, ...) {
     determinism = if (is.finite(b$time_ms)) "time budgets can change results between runs" else
       "search with node and depth budgets is deterministic (no random choices)",
     score_scale = list(
-      raw_unit = if (ev$kind == "search") "heuristic units (not centipawns)" else if (ev$kind == "none") "none" else "model units",
+      raw_unit = if (ev$kind == "none") "none" else if (!net) "heuristic units (not centipawns)" else
+        "model value p(win) - p(loss) for the side to act, in [-1, 1] (a model estimate)",
       raw_perspective = "side_to_act",
       views = "score_white (negated when Black acts) and score_mover (the side to act)",
       mate_encoding = "raw +/-(1e6 - plies); see mate_in_mover and mate_in_white",
       expected_score_map = paste0("1 / (1 + exp(-score / ", .G3_LOGISTIC_SCALE, ")) for heuristic scores (uncalibrated display map, not a probability); mates 1/0; terminal results exact; model WDL p_win + 0.5 p_draw"),
       logistic_scale = .G3_LOGISTIC_SCALE,
-      definition = paste0(
+      definition = if (net) paste0(
+        "Raw scores are the model's value of each position for the side to act, p(win) - p(loss) from its ",
+        "WDL head; expected scores are p(win) + 0.5 p(draw) from the same head (model estimates, uncalibrated, ",
+        "valid only for model revision ", ev$model_revision, "; no logistic map). Best and played actions are ",
+        "compared with the alternative scores of the model's mode: MCTS Q values (expected score (1 + Q) / 2, ",
+        "best = most visited), policy probabilities or ordering-search heuristic scores."
+      ) else paste0(
         "Raw scores come from a full-window root search of every legal action in each completed iteration ",
         "(", .G3_SEARCH_VERSION, ", ", .G3_EVAL_VERSION, "). Heuristic units weigh provisional piece values, ",
         "mobility, king pressure, pawn progress and platform options; they are not centipawns. Expected scores ",
@@ -691,7 +800,7 @@ print.g3_analysis <- function(x, ...) {
     created = .g3_now(),
     analysis_id = .g3_hash_object(list(
       game = info$game_content_hash, evaluator = ev$id, version = ev$version, model = ev$model_revision,
-      budget = list(nodes = format(b$nodes, scientific = FALSE), time_ms = format(b$time_ms), depth = b$depth),
+      budget = .g3_an_budget_key(b),
       features = .G3_FEATURE_SCHEMA
     ))
   )

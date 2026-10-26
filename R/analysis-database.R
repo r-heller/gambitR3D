@@ -69,8 +69,13 @@
 #' @details The summary is a list of data frames: `counts`, `outcomes`,
 #'   `terminations`, `lengths`, `platform_use`, `platform_use_by_phase`,
 #'   `transfers`, `repeated_positions`, `repetition`, `opening_groups`,
-#'   `motifs`, `evaluation_missingness` and `filters`. Rates carry their
-#'   numerator and denominator. Truncated and unfinished games are their
+#'   `motifs`, `evaluation_missingness`, `rate_intervals` and `filters`.
+#'   Rates carry their numerator and denominator, a Wilson score
+#'   interval at the 0.95 level (`ci_low`, `ci_high`; for shares of actions on the
+#'   game-clustered effective sample size, because actions within a game
+#'   are not independent) and `small_sample` (`TRUE` when fewer than 30
+#'   games contribute); `rate_intervals` states these methods. Truncated
+#'   and unfinished games are their
 #'   own categories, never draws. Opening groups are named descriptively
 #'   from this variant's own first actions; no orthodox opening names are
 #'   used.
@@ -87,7 +92,7 @@ g3_analyse_database <- function(db, filters = list(), evaluator = "search", budg
                                 resume = TRUE, max_seconds = Inf) {
   t0 <- proc.time()[["elapsed"]]
   ev <- .g3_an_evaluator(evaluator)
-  b <- .g3_budget(budget)
+  b <- .g3_an_budget(budget, ev$kind == "model")
   chunk_size <- as.integer(chunk_size)
   if (is.na(chunk_size) || chunk_size < 1L) .g3_abort("g3_invalid_state", "`chunk_size` must be a positive integer.")
   if (!is.list(filters)) .g3_abort("g3_invalid_state", "`filters` must be a list.")
@@ -98,7 +103,7 @@ g3_analyse_database <- function(db, filters = list(), evaluator = "search", budg
     schema = .G3_DBRUN_SCHEMA, source = src$identity, filters = .g3_dbrun_filters(filters),
     game_ids = as.list(ids), evaluator = ev$id, evaluator_version = ev$version,
     model_revision = ev$model_revision,
-    budget = list(nodes = format(b$nodes, scientific = FALSE), time_ms = format(b$time_ms), depth = b$depth),
+    budget = .g3_an_budget_key(b),
     rules_hash = .g3_tables()$rules_hash, feature_schema = .G3_FEATURE_SCHEMA
   )
   config_hash <- .g3_hash_object(config)
@@ -228,8 +233,7 @@ print.g3_database_analysis <- function(x, ...) {
   m <- x$manifest
   cat("<g3_database_analysis> ", m$status, ": ", m$n_completed, " of ", m$n_scheduled, " games completed, ",
       m$n_errors, " errors, ", m$n_pending, " pending\n", sep = "")
-  cat("Evaluator ", m$evaluator, ", budget ", .g3_an_budget_text(.g3_budget(lapply(m$budget, function(v) as.numeric(v)))),
-      " per position; filters ", m$filters, "\n", sep = "")
+  cat("Evaluator ", m$evaluator, ", budget ", .g3_an_budget_text(m$budget), " per position; filters ", m$filters, "\n", sep = "")
   if (nrow(x$summary$outcomes)) print(x$summary$outcomes, row.names = FALSE)
   invisible(x)
 }
@@ -389,6 +393,58 @@ print.g3_database_analysis <- function(x, ...) {
 
 # ---- collection summaries ---------------------------------------------------
 
+# Uncertainty of collection rates: 95% Wilson score intervals, and a
+# small-sample flag when fewer than 30 games contribute to a rate.
+.G3_RATE_CONF <- 0.95
+.G3_SMALL_SAMPLE_GAMES <- 30L
+
+# Wilson score interval for `x` successes in `n` trials (`n` may be an
+# effective, non-integer sample size). NA when `n` is 0.
+#' @noRd
+.g3_wilson <- function(x, n, conf = .G3_RATE_CONF) {
+  z <- stats::qnorm(1 - (1 - conf) / 2)
+  ok <- !is.na(x) & !is.na(n) & n > 0
+  nn <- ifelse(ok, n, 1)
+  p <- ifelse(ok, x / nn, 0)
+  den <- 1 + z^2 / nn
+  centre <- (p + z^2 / (2 * nn)) / den
+  half <- z * sqrt(pmax(p * (1 - p), 0) / nn + z^2 / (4 * nn^2)) / den
+  list(low = ifelse(ok, pmax(0, centre - half), NA_real_), high = ifelse(ok, pmin(1, centre + half), NA_real_))
+}
+
+# A pooled share of actions: `y` successes out of `m` actions, one entry per
+# game. Actions within a game are not independent, so the Wilson interval
+# uses the effective sample size sum(m) / deff, with the design effect from
+# the between-game (ratio-estimator) variance. When that variance cannot be
+# estimated (one game, or a share of 0 or 1) the number of games is used.
+#' @noRd
+.g3_cluster_rate <- function(y, m) {
+  keep <- !is.na(m) & m > 0
+  y <- y[keep]
+  m <- m[keep]
+  g <- length(m)
+  tot <- sum(m)
+  if (!g) return(list(share = NA_real_, low = NA_real_, high = NA_real_, n_eff = NA_real_, n_games = 0L))
+  p <- sum(y) / tot
+  n_eff <- if (g >= 2L && p > 0 && p < 1) {
+    v <- g / (g - 1) * sum((y - p * m)^2) / tot^2
+    if (v > 0) min(tot, p * (1 - p) / v) else tot
+  } else {
+    min(tot, g)
+  }
+  w <- .g3_wilson(p * n_eff, n_eff)
+  list(share = p, low = w$low, high = w$high, n_eff = n_eff, n_games = g)
+}
+
+# Add Wilson interval columns (ci_low, ci_high) to a table of game rates.
+#' @noRd
+.g3_rate_cols <- function(df, x, n) {
+  w <- .g3_wilson(x, n)
+  df$ci_low <- w$low
+  df$ci_high <- w$high
+  df
+}
+
 #' @noRd
 .g3_dbrun_summary <- function(results, filters, n_scheduled, n_errors, n_pending) {
   n <- length(results)
@@ -408,8 +464,11 @@ print.g3_database_analysis <- function(x, ...) {
   outcomes <- data.frame(result = res_levels,
                          n_games = vapply(res_levels, function(r) sum(sm$result == r), 0L, USE.NAMES = FALSE),
                          stringsAsFactors = FALSE)
+  small <- n < .G3_SMALL_SAMPLE_GAMES
   outcomes$denominator <- n
   outcomes$share <- share(outcomes$n_games, n)
+  outcomes <- .g3_rate_cols(outcomes, outcomes$n_games, n)
+  outcomes$small_sample <- small
   term_levels <- c("checkmate", "stalemate", "repetition", "halfmove", "bare_kings", "resign", "draw_agreed",
                    "truncated", "unfinished")
   terminations <- data.frame(termination = term_levels,
@@ -418,6 +477,8 @@ print.g3_database_analysis <- function(x, ...) {
                              stringsAsFactors = FALSE)
   terminations$denominator <- n
   terminations$share <- share(terminations$n_games, n)
+  terminations <- .g3_rate_cols(terminations, terminations$n_games, n)
+  terminations$small_sample <- small
   cls <- unique(c("rule_decisive", "rule_draw", "resignation", "agreed_draw", "truncated", "unfinished"))
   lengths <- do.call(rbind, lapply(c(cls, "all"), function(cl) {
     x <- if (cl == "all") sm$n_plies else sm$n_plies[sm$outcome_class == cl]
@@ -428,11 +489,19 @@ print.g3_database_analysis <- function(x, ...) {
   total_actions <- nrow(moves)
   plat <- sum(moves$platform_action)
   games_plat <- sum(sm$n_platform_actions > 0L)
+  # Per-game action counts for the game-clustered action shares.
+  gid <- factor(moves$game_id, levels = unique(sm$game_id))
+  per_game <- function(sel) as.numeric(tapply(sel, gid, sum, default = 0))
+  ca <- .g3_cluster_rate(per_game(moves$platform_action), per_game(rep(1, total_actions)))
+  wg <- .g3_wilson(games_plat, n)
   platform_use <- data.frame(
     n_games = n, total_actions = total_actions, platform_actions = plat,
     platform_rotations = sum(moves$action_type == "platform_rotation"),
-    share_of_actions = share(plat, total_actions), games_with_platform_action = games_plat,
-    share_of_games = share(games_plat, n), stringsAsFactors = FALSE
+    share_of_actions = share(plat, total_actions),
+    share_of_actions_ci_low = ca$low, share_of_actions_ci_high = ca$high, share_of_actions_effective_n = ca$n_eff,
+    games_with_platform_action = games_plat,
+    share_of_games = share(games_plat, n), share_of_games_ci_low = wg$low, share_of_games_ci_high = wg$high,
+    small_sample = small, stringsAsFactors = FALSE
   )
   phase_breaks <- c(0, 20, 40, 80, Inf)
   phase_lab <- c("plies 1-20", "plies 21-40", "plies 41-80", "plies 81+")
@@ -445,6 +514,15 @@ print.g3_database_analysis <- function(x, ...) {
   )
   platform_use_by_phase$share <- ifelse(platform_use_by_phase$actions > 0,
                                         platform_use_by_phase$platform_actions / platform_use_by_phase$actions, NA_real_)
+  pr <- lapply(phase_lab, function(p) {
+    inp <- !is.na(ph) & ph == p
+    .g3_cluster_rate(per_game(inp & moves$platform_action), per_game(inp))
+  })
+  platform_use_by_phase$n_games <- vapply(pr, function(r) as.integer(r$n_games), 0L)
+  platform_use_by_phase$effective_n <- vapply(pr, function(r) r$n_eff, 0)
+  platform_use_by_phase$ci_low <- vapply(pr, function(r) r$low, 0)
+  platform_use_by_phase$ci_high <- vapply(pr, function(r) r$high, 0)
+  platform_use_by_phase$small_sample <- platform_use_by_phase$n_games < .G3_SMALL_SAMPLE_GAMES
   # Level transitions by mode (movement by a piece versus transport).
   tr <- moves[moves$level_transfer | moves$board_transfer, , drop = FALSE]
   transfers <- if (nrow(tr)) {
@@ -495,6 +573,8 @@ print.g3_database_analysis <- function(x, ...) {
     denominator_games = n, stringsAsFactors = FALSE
   )
   motifs$share_of_games <- share(motifs$games_with_label, n)
+  motifs <- .g3_rate_cols(motifs, motifs$games_with_label, n)
+  motifs$small_sample <- rep(small, nrow(motifs))
   miss <- evs$missing_reason
   reasons <- sort(unique(miss[!is.na(miss)]))
   evaluation_missingness <- data.frame(
@@ -502,11 +582,24 @@ print.g3_database_analysis <- function(x, ...) {
     n_positions = c(sum(!is.na(evs$raw_score)), vapply(reasons, function(r) sum(miss == r, na.rm = TRUE), 0L, USE.NAMES = FALSE)),
     denominator = nrow(evs), stringsAsFactors = FALSE
   )
+  rate_intervals <- data.frame(
+    conf_level = .G3_RATE_CONF,
+    small_sample_threshold_games = .G3_SMALL_SAMPLE_GAMES,
+    game_rates = "Wilson score interval with games as the independent units (outcomes, terminations, share_of_games, motifs)",
+    action_rates = paste0("Wilson score interval on the game-clustered effective sample size (share_of_actions, platform use by ",
+                          "phase): actions within a game are not independent; the number of games is used when the design ",
+                          "effect cannot be estimated"),
+    small_sample = paste0("TRUE when fewer than ", .G3_SMALL_SAMPLE_GAMES, " games contribute to the rate: shares are unstable ",
+                          "and intervals wide"),
+    note = paste0("Intervals describe sampling uncertainty as if these games were a random sample of comparable ",
+                  "games; they say nothing about games outside the selection's filters."),
+    stringsAsFactors = FALSE
+  )
   list(
     counts = counts, outcomes = outcomes, terminations = terminations, lengths = lengths,
     platform_use = platform_use, platform_use_by_phase = platform_use_by_phase, transfers = transfers,
     repeated_positions = repeated_positions, repetition = repetition, opening_groups = opening_groups,
-    motifs = motifs, evaluation_missingness = evaluation_missingness,
+    motifs = motifs, evaluation_missingness = evaluation_missingness, rate_intervals = rate_intervals,
     filters = data.frame(filters = .g3_dbrun_filters(filters), stringsAsFactors = FALSE),
     games = sm
   )

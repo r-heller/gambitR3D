@@ -43,13 +43,14 @@
 #'   `pdf` (path or `NA`), `pdf_status`, `files` (data frame `file`,
 #'   `role`, `rows`, `bytes`, `sha256`), `totals` (the counts printed in
 #'   the report), `offline` (`TRUE`) and `package_version`. The same
-#'   manifest is written to `manifest.json`.
+#'   manifest is written to `manifest.json`, with `report` and `pdf` given
+#'   relative to the report directory (no local paths are exported).
 #' @examples
 #' # Analyse a short game and write an offline report into a temporary folder.
 #' game <- gambitR3D::g3_game_apply(gambitR3D::g3_new_game(), "m:W:0:1-W:0:2")
 #' result <- gambitR3D::g3_analyse_game(game, budget = base::list(nodes = 1000L))
-#' out <- gambitR3D::g3_export_analysis_report(result, base::file.path(base::tempdir(), "g3-report"),
-#'                                             overwrite = TRUE)
+#' dir <- base::file.path(base::tempdir(), "g3-report")
+#' out <- gambitR3D::g3_export_analysis_report(result, dir, overwrite = TRUE)
 #' out$files[, c("file", "rows", "sha256")]
 #' @export
 g3_export_analysis_report <- function(result, path, format = "html", title = NULL, overwrite = FALSE,
@@ -100,6 +101,9 @@ g3_export_analysis_report <- function(result, path, format = "html", title = NUL
   fdf <- .g3_an_rows_df(files, c(file = "character", role = "character", rows = "integer"))
   fdf$bytes <- vapply(fdf$file, function(f) as.numeric(file.size(file.path(path, f))), 0, USE.NAMES = FALSE)
   fdf$sha256 <- vapply(fdf$file, function(f) digest::digest(file = file.path(path, f), algo = "sha256"), "", USE.NAMES = FALSE)
+  # manifest.json records paths relative to the report directory, so an
+  # exported report never reveals the local directory layout. Only the
+  # returned list (which stays in this session) has the local paths.
   manifest <- list(
     schema = .G3_REPORT_SCHEMA, created = created, result_class = class(result)[1L], format = format,
     title = title, report = normalizePath(html_path), pdf = pdf_path, pdf_status = pdf_status,
@@ -107,6 +111,8 @@ g3_export_analysis_report <- function(result, path, format = "html", title = NUL
     package_version = as.character(utils::packageVersion("gambitR3D"))
   )
   mj <- manifest
+  mj$report <- "report.html"
+  mj$pdf <- if (is.na(pdf_path)) NA_character_ else "report.pdf"
   mj$files <- .g3_rows(fdf)
   .g3_atomic_write(paste0(jsonlite::toJSON(mj, auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null", digits = NA), "\n"),
                    file.path(path, "manifest.json"))
@@ -250,7 +256,11 @@ g3_export_analysis_report <- function(result, path, format = "html", title = NUL
 #' @noRd
 .g3_report_budget_text <- function(b) {
   if (is.null(b)) return("NA")
-  .g3_an_budget_text(.g3_budget(lapply(b[intersect(names(b), c("nodes", "time_ms", "depth"))], as.numeric)))
+  sb <- .g3_budget(lapply(b[intersect(names(b), c("nodes", "time_ms", "depth"))], as.numeric))
+  # Model budget fields (mode, simulations) are reported when present.
+  sb$mode <- b$mode
+  sb$simulations <- b$simulations
+  .g3_an_budget_text(sb)
 }
 
 # ---- report bodies ------------------------------------------------------------
@@ -377,10 +387,10 @@ g3_export_analysis_report <- function(result, path, format = "html", title = NUL
   )
   figs <- if (plots_ok) {
     paste(
-      .g3_report_figure(g3_plot_collection(x, "outcome"), "Outcomes of the analysed games with counts over the analysed total; truncated and unfinished are separate from draws.", "tables/outcomes.csv"),
-      .g3_report_figure(g3_plot_collection(x, "termination"), "Termination causes with counts over the analysed total.", "tables/terminations.csv"),
+      .g3_report_figure(g3_plot_collection(x, "outcome"), "Outcomes as shares of the analysed games with 95% Wilson intervals; labels give counts over the analysed total; truncated and unfinished are separate from draws.", "tables/outcomes.csv"),
+      .g3_report_figure(g3_plot_collection(x, "termination"), "Termination causes as shares of the analysed games with 95% Wilson intervals and counts.", "tables/terminations.csv"),
       .g3_report_figure(g3_plot_collection(x, "length"), "Game length in plies by outcome class, one point per game.", "tables/games.csv"),
-      .g3_report_figure(g3_plot_collection(x, "platform_use"), "Share of platform actions by game phase with counts.", "tables/platform_use_by_phase.csv"),
+      .g3_report_figure(g3_plot_collection(x, "platform_use"), "Share of platform actions by game phase with game-clustered 95% intervals and counts.", "tables/platform_use_by_phase.csv"),
       if (length(x$results)) .g3_report_figure(g3_plot_board_heatmap(x, "occupancy", "board_local"),
                                              "Pooled occupancy share of every physical square, per board in local coordinates.", NULL, width = 8, height = 5.5) else "",
       sep = "\n"
@@ -401,6 +411,13 @@ g3_export_analysis_report <- function(result, path, format = "html", title = NUL
             "<p class=\"note\">Descriptive summaries of this selection; plies within a game are not independent observations.</p>"),
     .g3_report_sec("figures", "Figures", figs),
     .g3_report_sec("outcomes", "Outcomes and termination",
+            paste0("<p class=\"note\">Shares carry 95% Wilson score intervals (ci_low, ci_high). Shares of actions use ",
+                   "the game-clustered effective sample size, because actions within a game are not independent. ",
+                   "small_sample marks rates based on fewer than ", .G3_SMALL_SAMPLE_GAMES, " games.",
+                   if (isTRUE(sm$outcomes$small_sample[1L])) paste0(" This selection has ", m$n_completed,
+                                                                    " analysed games: treat its shares as unstable.") else "",
+                   "</p>"),
+            .g3_report_table(sm$rate_intervals, max_rows, "tables/rate_intervals.csv"),
             .g3_report_table(sm$outcomes, max_rows, "tables/outcomes.csv"),
             .g3_report_table(sm$terminations, max_rows, "tables/terminations.csv"),
             .g3_report_table(sm$lengths, max_rows, "tables/lengths.csv")),

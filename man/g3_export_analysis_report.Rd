@@ -38,7 +38,8 @@ Invisibly, an output manifest list: \code{schema}, \code{created},
 \code{pdf} (path or \code{NA}), \code{pdf_status}, \code{files} (data frame \code{file},
 \code{role}, \code{rows}, \code{bytes}, \code{sha256}), \code{totals} (the counts printed in
 the report), \code{offline} (\code{TRUE}) and \code{package_version}. The same
-manifest is written to \code{manifest.json}.
+manifest is written to \code{manifest.json}, with \code{report} and \code{pdf} given
+relative to the report directory (no local paths are exported).
 }
 \description{
 Writes a self-contained HTML report (and machine-readable CSV tables)
@@ -52,7 +53,7 @@ It renders without network access.
 # Analyse a short game and write an offline report into a temporary folder.
 game <- gambitR3D::g3_game_apply(gambitR3D::g3_new_game(), "m:W:0:1-W:0:2")
 result <- gambitR3D::g3_analyse_game(game, budget = base::list(nodes = 1000L))
-out <- gambitR3D::g3_export_analysis_report(result, base::file.path(base::tempdir(), "g3-report"),
-                                            overwrite = TRUE)
+dir <- base::file.path(base::tempdir(), "g3-report")
+out <- gambitR3D::g3_export_analysis_report(result, dir, overwrite = TRUE)
 out$files[, c("file", "rows", "sha256")]
 }

@@ -34,6 +34,11 @@
                      "neural_move_ordering", "training", "self_play_training", "export", "explanation")
 .G3_POLICY_TASKS <- c("play", "policy", "legal_action_scoring", "mcts", "neural_move_ordering")
 .G3_PROVENANCE_FIELDS <- c("status", "external_weights", "training_data", "run_id", "seed")
+# Licence statuses that allow use: the project's own code or weights trained
+# locally from project-generated data, or a third-party licence that was
+# reviewed and cleared. Weights from outside the project need the latter.
+.G3_LICENCE_PROJECT <- c("project_code", "project_generated")
+.G3_LICENCE_CLEARED <- c("cleared", "accepted")
 
 # Registry locations ---------------------------------------------------------
 
@@ -140,6 +145,57 @@ print.g3_model <- function(x, ...) {
 
 # Validation ---------------------------------------------------------------------
 
+# Does the manifest declare weights from outside this project? Anything but
+# the literal "none" counts (a description string or a record).
+#' @noRd
+.g3_has_external_weights <- function(m) {
+  ew <- m$provenance$external_weights
+  !(is.character(ew) && length(ew) == 1L && !is.na(ew) && identical(tolower(trimws(ew)), "none"))
+}
+
+# Provenance and licence problems (character, empty when usable). External
+# weights must be pinned to an exact source revision (a full 40- or 64-hex
+# commit id) and the SHA-256 of the external artefact, recorded either as
+# provenance$external_weights = list(source, revision, sha256) or as
+# source$revision and source$artifact_sha256, and need a cleared licence.
+#' @noRd
+.g3_provenance_problems <- function(m) {
+  pv <- m$provenance %||% list()
+  pmiss <- .G3_PROVENANCE_FIELDS[vapply(.G3_PROVENANCE_FIELDS, function(f) {
+    v <- pv[[f]]
+    is.null(v) || (is.character(v) && (!length(v) || all(!nzchar(v))))
+  }, TRUE)]
+  lic <- m$license$status
+  lic_ok <- !is.null(m$license$declared) && !is.null(lic)
+  one <- function(x) if (is.character(x) && length(x) == 1L && !is.na(x)) x else NA_character_
+  probs <- c(
+    if (length(pmiss)) paste("incomplete provenance:", paste(pmiss, collapse = ", ")),
+    if (!lic_ok) "licence declaration or status missing",
+    if (!identical(pv$status, "accepted")) {
+      paste0("provenance status '", format(pv$status %||% "none"), "' (only accepted provenance can be used)")
+    }
+  )
+  if (!.g3_has_external_weights(m)) {
+    if (lic_ok && !one(lic) %in% c(.G3_LICENCE_PROJECT, .G3_LICENCE_CLEARED)) {
+      probs <- c(probs, paste0("licence status '", format(lic), "' is not cleared"))
+    }
+    return(probs)
+  }
+  rec <- if (is.list(pv$external_weights)) pv$external_weights else list()
+  rev <- one(rec$revision %||% m$source$revision)
+  sha <- one(rec$sha256 %||% rec$artifact_sha256 %||% m$source$artifact_sha256)
+  c(
+    probs,
+    if (is.na(rev) || !grepl("^[0-9a-f]{40}([0-9a-f]{24})?$", rev)) {
+      "external weights without an exact source revision (full commit id)"
+    },
+    if (is.na(sha) || !grepl("^[0-9a-f]{64}$", sha)) "external weights without a SHA-256 of the artefact",
+    if (lic_ok && !one(lic) %in% .G3_LICENCE_CLEARED) {
+      paste0("external weights need a cleared licence (status '", format(lic), "')")
+    }
+  )
+}
+
 #' @noRd
 .g3_check_row <- function(check, ok, detail = "") {
   data.frame(check = check, status = if (is.na(ok)) "skip" else if (ok) "pass" else "fail",
@@ -157,17 +213,10 @@ print.g3_model <- function(x, ...) {
   add("manifest", identical(m$schema, .G3_MANIFEST_SCHEMA) && !length(miss),
       if (length(miss)) paste("missing:", paste(miss, collapse = ", ")) else if (!identical(m$schema, .G3_MANIFEST_SCHEMA)) "unknown manifest schema" else "")
   kind <- m$kind %||% NA_character_
-  # Provenance: every field present and the status accepted.
-  pv <- m$provenance %||% list()
-  pmiss <- .G3_PROVENANCE_FIELDS[vapply(.G3_PROVENANCE_FIELDS, function(f) {
-    v <- pv[[f]]
-    is.null(v) || (is.character(v) && (!length(v) || all(!nzchar(v))))
-  }, TRUE)]
-  lic_ok <- !is.null(m$license$declared) && !is.null(m$license$status)
-  add("provenance", !length(pmiss) && lic_ok && identical(pv$status, "accepted"),
-      if (length(pmiss)) paste("incomplete provenance:", paste(pmiss, collapse = ", ")) else
-        if (!lic_ok) "licence declaration or status missing" else
-          if (!identical(pv$status, "accepted")) paste0("provenance status '", pv$status, "' (only accepted provenance can be used)") else "")
+  # Provenance: every field present, the status accepted, the licence
+  # cleared, and external weights pinned (revision and SHA-256).
+  pprobs <- .g3_provenance_problems(m)
+  add("provenance", !length(pprobs), paste(pprobs, collapse = "; "))
   add("rules", identical(m$rules$hash, rules_hash),
       if (identical(m$rules$hash, rules_hash)) "" else paste0("rules hash ", format(m$rules$hash %||% "none"), " does not match ", rules_hash))
   add("action_schema", identical(m$action_schema, .G3_ACTION_SCHEMA),
@@ -250,6 +299,15 @@ print.g3_model <- function(x, ...) {
 #' fail with "adaptation required"; an untrained architecture fails for
 #' play.
 #'
+#' The licence status must be `"project_code"` or `"project_generated"`
+#' (this package's code, or weights trained locally from generated data) or
+#' `"cleared"`. A manifest whose provenance declares external weights
+#' (`external_weights` other than `"none"`) is usable only with an exact
+#' source revision (a full commit id), the SHA-256 of the external artefact
+#' (as `external_weights = list(source, revision, sha256)`, or
+#' `source$revision` and `source$artifact_sha256`) and a cleared licence;
+#' otherwise the `provenance` check fails and names what is missing.
+#'
 #' @param model A `g3_model`, a model id or `"model:<id>"`, or the path of
 #'   a `model.json` manifest.
 #' @param profile Either a rules profile id (default task `"play"`) or a
@@ -268,7 +326,8 @@ print.g3_model <- function(x, ...) {
 #'   Returned invisibly when `error = TRUE` and the model is valid.
 #' @examples
 #' # Reference candidates are listed but cannot play this game.
-#' v <- gambitR3D::g3_validate_model("amanm10000/chess-policy-net", "experimental-v0.1", error = FALSE)
+#' v <- gambitR3D::g3_validate_model("amanm10000/chess-policy-net", "experimental-v0.1",
+#'                                   error = FALSE)
 #' v$valid
 #' v$checks[v$checks$status == "fail", ]
 #' @export
@@ -311,6 +370,7 @@ print.g3_model_validation <- function(x, ...) {
   m <- model$manifest
   kind <- m$kind
   have <- unlist(m$tasks %||% list())
+  pprobs <- .g3_provenance_problems(m)
   rows <- lapply(.G3_MODEL_TASKS, function(task) {
     st <- "available"
     why <- NA_character_
@@ -330,6 +390,9 @@ print.g3_model_validation <- function(x, ...) {
         st <- "not_applicable"
         why <- if (identical(kind, "search")) "the search opponent has no learned network" else "not provided by this model"
       }
+    } else if (length(pprobs)) {
+      st <- "unavailable"
+      why <- paste(pprobs, collapse = "; ")
     } else if (identical(m$backend, "python-pytorch-worker") && !runtime$available) {
       st <- "requires_runtime"
       why <- runtime$reason
@@ -352,7 +415,8 @@ print.g3_model_validation <- function(x, ...) {
 #' Reports, per task, whether a model can perform it now. Statuses are
 #' `"available"`, `"requires_runtime"` (a configured ML environment is
 #' needed; see [g3_setup_ml()]), `"unavailable"` (for example an untrained
-#' architecture or a missing artifact), `"adaptation_required"` (Hugging
+#' architecture, a missing artifact, or provenance that
+#' [g3_validate_model()] would refuse), `"adaptation_required"` (Hugging
 #' Face references for conventional chess) and `"not_applicable"`. No
 #' Python process is started and nothing is downloaded; artifact hashes are
 #' verified by [g3_validate_model()].
@@ -390,7 +454,9 @@ g3_model_capabilities <- function(model = NULL) {
 #' Validates a model manifest (normally the `model.json` written next to a
 #' checkpoint by [g3_train_model()]) and adds it to a local registry. The
 #' manifest must describe a `trained_checkpoint` with complete accepted
-#' provenance, the current rules hash, action schema and feature schema,
+#' provenance and a cleared licence (external weights also need a pinned
+#' revision and SHA-256; see [g3_validate_model()]), the current rules
+#' hash, action schema and feature schema,
 #' and artifacts whose SHA-256 hashes and weights digest match the files on
 #' disk. Built-in ids cannot be reused, and an id already registered with
 #' different weights is refused.
@@ -694,7 +760,12 @@ g3_register_model <- function(manifest, registry_dir = NULL) {
   t0 <- proc.time()[["elapsed"]]
   r <- .g3_model_core_decision(core, tabs, w, s, NULL)
   alt <- .g3_model_alternatives(core, legal, ids, tabs, ctx, r)
-  if (!is.null(actions)) alt <- alt[alt$action_id %in% actions, , drop = FALSE]
+  if (!is.null(actions)) {
+    # Rank within the requested subset, keeping the model's order, so the
+    # subset always has a first choice (rank 1).
+    alt <- alt[alt$action_id %in% actions, , drop = FALSE]
+    alt$rank <- as.integer(rank(alt$rank, ties.method = "first"))
+  }
   rownames(alt) <- NULL
   structure(
     list(

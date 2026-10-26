@@ -19,7 +19,8 @@ columns \code{display_name}, \code{kind}, \code{model_status} and \code{source}.
 Reports, per task, whether a model can perform it now. Statuses are
 \code{"available"}, \code{"requires_runtime"} (a configured ML environment is
 needed; see \code{\link[=g3_setup_ml]{g3_setup_ml()}}), \code{"unavailable"} (for example an untrained
-architecture or a missing artifact), \code{"adaptation_required"} (Hugging
+architecture, a missing artifact, or provenance that
+\code{\link[=g3_validate_model]{g3_validate_model()}} would refuse), \code{"adaptation_required"} (Hugging
 Face references for conventional chess) and \code{"not_applicable"}. No
 Python process is started and nothing is downloaded; artifact hashes are
 verified by \code{\link[=g3_validate_model]{g3_validate_model()}}.

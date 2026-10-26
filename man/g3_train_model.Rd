@@ -60,6 +60,14 @@ registered with a manifest whose status is \code{"pipeline-smoke, no strength cl
 512 positions, 600 s, 2 threads, 100 MB) unless larger \code{limits} are
 explicitly authorised.
 }
+\details{
+A cancelled job or an exceeded time limit is noticed between optimizer
+chunks and, while training data are generated, before every position's
+teacher search. A stop during data generation ends the run cleanly with
+status \code{"cancelled"} or \code{"timed_out"}: no worker is started, nothing of
+the partial dataset is kept and no checkpoint is written (\code{model},
+\code{checkpoint} are \code{NULL}); resuming regenerates the same seeded data.
+}
 \examples{
 \dontrun{
 # Needs g3_setup_ml(); a few seconds on one CPU thread.
