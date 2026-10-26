@@ -32,9 +32,14 @@
   occupied <- core$occ > 0L
   sqcol <- integer(64L)
   sqcol[occupied] <- core$pcolor[core$occ[occupied]]
+  # Physical squares at each projected coordinate: the static main-board
+  # table plus the 16 platform squares at their current coordinates.
+  by_ci <- tabs$main_by_ci
+  pci <- co$ci[49:64]
+  for (k in 1:16) by_ci[[pci[k]]] <- c(by_ci[[pci[k]]], 48L + k)
   list(
     file = co$file, rank = co$rank, ci = co$ci,
-    cnt = tabulate(co$ci[occupied], 60L), sqcol = sqcol
+    cnt = tabulate(co$ci[occupied], 60L), sqcol = sqcol, by_ci = by_ci
   )
 }
 
@@ -59,7 +64,7 @@
   # Pawns attack one file aside, one rank forward in their colour's direction.
   if (any(t == 1L & dr == .G3_PAWN_DIR[by] & adf == 1L)) return(TRUE)
   if (any(t == 2L & ((adf == 1L & adr == 2L) | (adf == 2L & adr == 1L)))) return(TRUE)
-  if (any(t == 6L & pmax(adf, adr) == 1L)) return(TRUE)
+  if (any(t == 6L & adf <= 1L & adr <= 1L & (adf + adr) > 0L)) return(TRUE)
   ortho <- (t == 4L | t == 5L) & xor(df == 0L, dr == 0L)
   diag <- (t == 3L | t == 5L) & adf == adr & adf > 0L
   cand <- which(ortho | diag)
@@ -108,75 +113,70 @@
   side <- core$side
   rows <- vector("list", 64L)
   nr <- 0L
-  file <- ctx$file
   rank <- ctx$rank
   ci <- ctx$ci
+  cnt <- ctx$cnt
+  by <- ctx$by_ci
   sqcol <- ctx$sqcol
   occ <- core$occ
-  # Destination squares at coordinate (tf, tr) that are empty or hold an enemy.
-  dests_at <- function(tf, tr) {
-    d <- which(ci == tf * 10L + tr + 1L)
-    d[sqcol[d] != side]
-  }
+  enemy <- 3L - side
+  has_ep <- length(core$ep) > 0L && core$pcolor[core$ep[1L]] != side && core$psq[core$ep[1L]] == core$ep[2L]
+  ep_ci <- if (has_ep) core$ep[3L] * 10L + core$ep[4L] + 1L else -1L
   movers <- which(core$pcolor == side & core$psq > 0L)
   for (p in movers) {
     s <- core$psq[p]
-    f <- file[s]
-    r <- rank[s]
+    cs <- ci[s]
     t <- core$ptype[p]
-    to <- integer()
-    flag <- integer()
     if (t == 2L || t == 6L) {
-      off <- if (t == 2L) .G3_KNIGHT else .G3_KING
-      tf <- f + off[, 1L]
-      tr <- r + off[, 2L]
-      ok <- .g3_in_grid(tf, tr)
-      tci <- tf[ok] * 10L + tr[ok] + 1L
-      d <- which(ci %in% tci)
+      d <- unlist(by[if (t == 2L) tabs$knight_ci[[cs]] else tabs$king_ci[[cs]]], use.names = FALSE)
       to <- d[sqcol[d] != side]
       flag <- integer(length(to))
     } else if (t >= 3L && t <= 5L) {
-      dirs <- switch(t - 2L, .G3_DIAG, .G3_ORTHO, rbind(.G3_ORTHO, .G3_DIAG))
-      for (k in seq_len(nrow(dirs))) {
-        tf <- f
-        tr <- r
-        repeat {
-          tf <- tf + dirs[k, 1L]
-          tr <- tr + dirs[k, 2L]
-          if (!.g3_in_grid(tf, tr)) break
-          to <- c(to, dests_at(tf, tr))
-          if (ctx$cnt[tf * 10L + tr + 1L] > 0L) break
+      ks <- switch(t - 2L, 5:8, 1:4, 1:8)
+      rays <- tabs$ray_ci[[cs]]
+      to <- integer()
+      for (k in ks) {
+        for (tci in rays[[k]]) {
+          d <- by[[tci]]
+          if (length(d)) to <- c(to, d[sqcol[d] != side])
+          if (cnt[tci] > 0L) break
         }
       }
       flag <- integer(length(to))
     } else {
+      # Pawns: ci + dir moves one rank; +/- 10 changes file.
       dir <- .G3_PAWN_DIR[side]
+      r <- rank[s]
+      to <- integer()
+      flag <- integer()
       tr <- r + dir
       if (tr >= 0L && tr <= 9L) {
-        d <- which(ci == f * 10L + tr + 1L)
+        c1 <- cs + dir
+        d <- by[[c1]]
         d <- d[occ[d] == 0L]
-        to <- c(to, d)
-        flag <- c(flag, integer(length(d)))
+        to <- d
+        flag <- integer(length(d))
         tr2 <- r + 2L * dir
-        if (!core$pmoved[p] && tr2 >= 0L && tr2 <= 9L && ctx$cnt[f * 10L + tr + 1L] == 0L) {
-          d2 <- which(ci == f * 10L + tr2 + 1L)
+        if (!core$pmoved[p] && tr2 >= 0L && tr2 <= 9L && cnt[c1] == 0L) {
+          d2 <- by[[cs + 2L * dir]]
           d2 <- d2[occ[d2] == 0L]
           to <- c(to, d2)
           flag <- c(flag, rep(1L, length(d2)))
         }
-        for (tf in c(f - 1L, f + 1L)) {
+        f <- (cs - 1L) %/% 10L
+        for (df in c(-10L, 10L)) {
+          tf <- f + df %/% 10L
           if (tf < 0L || tf > 5L) next
-          d <- which(ci == tf * 10L + tr + 1L)
-          d <- d[sqcol[d] == 3L - side]
-          to <- c(to, d)
-          flag <- c(flag, integer(length(d)))
+          tci <- c1 + df
+          d <- by[[tci]]
+          dc <- d[sqcol[d] == enemy]
+          to <- c(to, dc)
+          flag <- c(flag, integer(length(dc)))
           # En passant: land on an empty square at the crossed coordinate.
-          if (length(core$ep) && core$ep[3L] == tf && core$ep[4L] == tr &&
-              core$pcolor[core$ep[1L]] != side && core$psq[core$ep[1L]] == core$ep[2L]) {
-            d <- which(ci == tf * 10L + tr + 1L)
-            d <- d[occ[d] == 0L]
-            to <- c(to, d)
-            flag <- c(flag, rep(2L, length(d)))
+          if (tci == ep_ci) {
+            de <- d[occ[d] == 0L]
+            to <- c(to, de)
+            flag <- c(flag, rep(2L, length(de)))
           }
         }
       }
@@ -233,6 +233,89 @@
   storage.mode(out) <- "integer"
   colnames(out) <- .G3_ACOLS
   out
+}
+
+# Number of pseudo-legal actions (ignoring en passant) for colour `side`,
+# without building the action matrix. Equals nrow(.g3_pseudo()) for the
+# same colour with no en-passant record; used by the evaluation.
+#' @noRd
+.g3_count_pseudo <- function(core, ctx, tabs, side) {
+  rank <- ctx$rank
+  cnt <- ctx$cnt
+  by <- ctx$by_ci
+  sqcol <- ctx$sqcol
+  occ <- core$occ
+  enemy <- 3L - side
+  total <- 0L
+  movers <- which(core$pcolor == side & core$psq > 0L)
+  for (p in movers) {
+    s <- core$psq[p]
+    cs <- ctx$ci[s]
+    t <- core$ptype[p]
+    if (t == 2L || t == 6L) {
+      d <- unlist(by[if (t == 2L) tabs$knight_ci[[cs]] else tabs$king_ci[[cs]]], use.names = FALSE)
+      total <- total + sum(sqcol[d] != side)
+    } else if (t >= 3L && t <= 5L) {
+      rays <- tabs$ray_ci[[cs]]
+      for (k in switch(t - 2L, 5:8, 1:4, 1:8)) {
+        for (tci in rays[[k]]) {
+          d <- by[[tci]]
+          if (length(d)) total <- total + sum(sqcol[d] != side)
+          if (cnt[tci] > 0L) break
+        }
+      }
+    } else {
+      dir <- .G3_PAWN_DIR[side]
+      r <- rank[s]
+      tr <- r + dir
+      if (tr < 0L || tr > 9L) next
+      c1 <- cs + dir
+      d <- by[[c1]]
+      to <- d[occ[d] == 0L]
+      tr2 <- r + 2L * dir
+      if (!core$pmoved[p] && tr2 >= 0L && tr2 <= 9L && cnt[c1] == 0L) {
+        d2 <- by[[cs + 2L * dir]]
+        to <- c(to, d2[occ[d2] == 0L])
+      }
+      f <- (cs - 1L) %/% 10L
+      if (f > 0L) {
+        d <- by[[c1 - 10L]]
+        to <- c(to, d[sqcol[d] == enemy])
+      }
+      if (f < 5L) {
+        d <- by[[c1 + 10L]]
+        to <- c(to, d[sqcol[d] == enemy])
+      }
+      if (length(to)) {
+        pro <- .g3_promotes(side, to, rank[to], core$dock, tabs)
+        total <- total + length(to) + 3L * sum(pro)
+      }
+    }
+  }
+  # Platform actions, two orientations per free dock; a carried pawn that
+  # would promote counts four promotion choices.
+  for (pl in 1:4) {
+    sqs <- tabs$plat_squares[[pl]]
+    occp <- occ[sqs][occ[sqs] > 0L]
+    if (length(occp) != 1L || core$pcolor[occp] != side) next
+    free <- setdiff(tabs$dock_adj[[core$dock[pl]]], core$dock[-pl])
+    if (!length(free)) next
+    if (core$ptype[occp] != 1L) {
+      total <- total + 2L * length(free)
+      next
+    }
+    cell <- core$psq[occp] - sqs[1L] + 1L
+    for (nd in free) {
+      for (rot in c(0L, 180L)) {
+        no <- (core$orient[pl] + rot) %% 360L
+        nrk <- tabs$plat_rank[nd, if (no == 180L) 2L else 1L, cell]
+        dk <- core$dock
+        dk[pl] <- nd
+        total <- total + if (.g3_promotes(side, core$psq[occp], nrk, dk, tabs)) 4L else 1L
+      }
+    }
+  }
+  total
 }
 
 # Is the mover's king safe after pseudo-legal action `a`? Uses a light copy:
@@ -333,8 +416,30 @@
 #' @noRd
 .g3_legal <- function(core, tabs, ctx = .g3_ctx(core, tabs)) {
   ps <- .g3_pseudo(core, ctx, tabs)
-  if (nrow(ps)) {
-    keep <- vapply(seq_len(nrow(ps)), function(i) .g3_safe_after(core, ctx, ps[i, ], tabs), TRUE)
+  n <- nrow(ps)
+  if (n) {
+    side <- core$side
+    kp <- which(core$ptype == 6L & core$pcolor == side & core$psq > 0L)
+    ks <- core$psq[kp]
+    kf <- ctx$file[ks]
+    kr <- ctx$rank[ks]
+    in_check <- .g3_attacked(kf, kr, 3L - side, ctx$file, ctx$rank, ctx$cnt, core$psq, core$ptype, core$pcolor)
+    if (in_check) {
+      need <- rep(TRUE, n)
+    } else {
+      # Only occupant counts on intermediate coordinates decide slider
+      # attacks, and a move lowers a count only at its source coordinate
+      # (a platform action moves its single occupant likewise). So a move
+      # that is not by the king and not en passant can expose the king only
+      # if its source coordinate lies on a line from the king.
+      df <- ctx$file[ps[, "from"]] - kf
+      dr <- ctx$rank[ps[, "from"]] - kr
+      aligned <- df == 0L | dr == 0L | abs(df) == abs(dr)
+      need <- aligned | ps[, "piece"] == kp | ps[, "flag"] == 2L
+    }
+    keep <- rep(TRUE, n)
+    idx <- which(need)
+    keep[idx] <- vapply(idx, function(i) .g3_safe_after(core, ctx, ps[i, ], tabs), TRUE)
     ps <- ps[keep, , drop = FALSE]
   }
   m <- rbind(ps, .g3_castles(core, ctx, tabs))

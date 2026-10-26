@@ -31,13 +31,7 @@
     sum(.G3_PIECE_VALUE[typ[alive & col == 2L]])
   )
   # Mobility: pseudo-legal action counts for both sides.
-  mob <- integer(2L)
-  for (s in 1:2) {
-    c2 <- core
-    c2$side <- s
-    c2$ep <- integer(0L)
-    mob[s] <- nrow(.g3_pseudo(c2, ctx, tabs))
-  }
+  mob <- c(.g3_count_pseudo(core, ctx, tabs, 1L), .g3_count_pseudo(core, ctx, tabs, 2L))
   # King neighbourhood and check.
   king_near <- integer(2L)
   check <- logical(2L)

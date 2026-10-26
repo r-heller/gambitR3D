@@ -109,6 +109,39 @@
     })
   })
 
+  # Static lookup tables in projected-coordinate space (ci = file*10 + rank + 1):
+  # main-board squares at each coordinate, knight and king targets, and the
+  # coordinates along each of the eight rays (orthogonal first, then diagonal).
+  main_ci <- main_file * 10L + main_rank + 1L
+  main_by_ci <- lapply(1:60, function(ci) which(main_ci == ci))
+  cf <- (0:59) %/% 10L
+  cr <- (0:59) %% 10L
+  offsets_ci <- function(off) {
+    lapply(1:60, function(ci) {
+      tf <- cf[ci] + off[, 1L]
+      tr <- cr[ci] + off[, 2L]
+      ok <- tf >= 0L & tf <= 5L & tr >= 0L & tr <= 9L
+      as.integer(tf[ok] * 10L + tr[ok] + 1L)
+    })
+  }
+  knight_off <- matrix(c(1L, 2L, 2L, 1L, 2L, -1L, 1L, -2L, -1L, -2L, -2L, -1L, -2L, 1L, -1L, 2L), ncol = 2L, byrow = TRUE)
+  king_off <- matrix(c(-1L, -1L, -1L, 0L, -1L, 1L, 0L, -1L, 0L, 1L, 1L, -1L, 1L, 0L, 1L, 1L), ncol = 2L, byrow = TRUE)
+  dirs <- matrix(c(1L, 0L, -1L, 0L, 0L, 1L, 0L, -1L, 1L, 1L, 1L, -1L, -1L, 1L, -1L, -1L), ncol = 2L, byrow = TRUE)
+  ray_ci <- lapply(1:60, function(ci) {
+    lapply(1:8, function(k) {
+      out <- integer()
+      f <- cf[ci]
+      r <- cr[ci]
+      repeat {
+        f <- f + dirs[k, 1L]
+        r <- r + dirs[k, 2L]
+        if (f < 0L || f > 5L || r < 0L || r > 9L) break
+        out <- c(out, as.integer(f * 10L + r + 1L))
+      }
+      out
+    })
+  })
+
   tabs <- list(
     rules_version = prof$rules_version,
     rules_hash = prof$rules_hash,
@@ -120,7 +153,9 @@
     plat_file = plat_file, plat_rank = plat_rank,
     plat_squares = lapply(1:4, function(p) 48L + (p - 1L) * 4L + 1:4),
     setup = setup, init_dock = init_dock,
-    promo = promo, castle = castle
+    promo = promo, castle = castle,
+    main_by_ci = main_by_ci, knight_ci = offsets_ci(knight_off), king_ci = offsets_ci(king_off),
+    ray_ci = ray_ci
   )
   .g3_env$tables <- tabs
   tabs
