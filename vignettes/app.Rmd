@@ -1,0 +1,112 @@
+---
+title: "The app"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{The app}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+`g3_run_app()` starts a local Shiny app for playing, analysing and practising
+the game. It needs the suggested packages shiny, bslib, htmltools and callr.
+
+```{r, eval = FALSE}
+gambitR3D::g3_run_app()
+# A fixed port, no browser window, and a catalogue file of your choice:
+gambitR3D::g3_run_app(db_path = "~/gambitR3D/games.sqlite", port = 8080,
+                      launch.browser = FALSE)
+# Save native game files instead of using the catalogue:
+gambitR3D::g3_run_app(db_path = FALSE)
+```
+
+The app listens on `127.0.0.1` only. Another `host` makes it reachable from
+other machines without authentication, so the app warns when you choose one.
+It loads nothing from the internet: the 3D library (three.js) and every icon,
+script and style ship with the package, and the app sends no telemetry.
+
+## Display is not logic
+
+The browser only shows positions and sends intentions; every legal action
+comes from the rules engine in R, and every move is checked again before it is
+applied. Display settings never enter the game:
+
+- **2D and 3D** show the same position. Switching keeps the selection and the
+  position key.
+- **Neutral highest / Neutral lowest** only changes how the Neutral board is
+  drawn. The action ids, positions and results are identical either way.
+- **Exploded view, x-ray, level isolation and the viewpoint** are display aids
+  as well.
+
+## Sections
+
+| Section | What it does |
+|---|---|
+| Play | hotseat or against the search, greedy or random opponent, or a validated trained model; takeback, resignation, agreed draws (hotseat), save and load |
+| Analyse | a copy of a game: ply navigation, whole-game analysis in the background, an evaluation plot, a move table and the board linked to one selected ply, tactics, a board heatmap, report download; playing from an earlier ply makes a labelled variation |
+| Database | filter and page through the game catalogue, open a game in Play or Analyse, export, import with a report of duplicates and quarantined records, soft delete and restore, backup |
+| Coach | a review of the live game or the analysis copy, decisions and claims with their evidence, analysed lines previewed on a copy, an explanation for any legal action |
+| Training | "Practise chess": exercises with hints in order and scored attempts, a practice plan and your progress. "Train opponent": a bounded CPU training run and self-play, when the optional environment exists |
+| Models | the model registry with each model's capabilities, validation checks and provenance; a validated checkpoint can be chosen as the Play opponent |
+| Settings | language (English or German), light or dark theme, reduced motion, the starting board view and Neutral height, the storage folder |
+
+The live game is never changed by Analyse, Coach or Training: they work on
+copies, and every copy says so.
+
+## The 2D boards
+
+The seven boards are drawn as grids: the main boards B, N and W from top to
+bottom (from White's side), each platform beside the board it is docked on,
+with its dock and orientation written out. Overlapping coordinates on
+different boards are separate squares with separate names, such as `W c3` and
+`N c3`.
+
+Select a piece to see its legal actions. Destinations are marked on the board
+and also listed as buttons below it; promotions, platform moves (dock and
+orientation) and castling are chosen there. Marks use shapes as well as
+colour: a dot for a move, a ring for a capture, a diamond for castling.
+
+Keyboard use: Tab moves between boards and controls, the arrow keys move
+within a board, Page Up and Page Down jump between boards, Enter or Space
+selects or plays, and Escape cancels. Each square has an accessible name with
+its board, coordinate, piece and marks, and committed moves are announced.
+
+## The 3D scene
+
+The 3D scene loads on demand. Drag to orbit, scroll to zoom, or choose a
+viewpoint; "Reset camera" fits all seven boards in view again. A raised board
+hides squares below it: when the square you point at is not the one you mean,
+the app offers a chooser of the squares under the pointer, and x-ray makes the
+boards see-through. Platform moves are animated, or applied at once when the
+system asks for reduced motion. Without WebGL, the app stays in 2D and says
+why.
+
+## Storage
+
+By default games are saved in a SQLite catalogue, `games.sqlite` in
+`tools::R_user_dir("gambitR3D", "data")`, before a move is acknowledged. The
+learner profile for practice is a JSON file in the same folder, and its
+"use in a training dataset" option is off unless you switch it on. Nothing is
+uploaded. Games in the native format (`.g3.json`) can be downloaded and loaded
+again at any time.
+
+## Background work
+
+Computer moves, analyses, reviews, imports, exports and training run in
+separate R processes, so the app stays responsive. Running work is listed in
+the header with its progress, and can be cancelled. Work started by a session
+stops when the session ends.
+
+## Known limits
+
+- A game resumed from the catalogue comes back as a hotseat game, because the
+  catalogue does not store the computer opponent's settings.
+- Playing against a trained model starts a model worker for every move, which
+  takes a few seconds.
+- Move notation from the engine (such as `P W:c2-W:c4`) is not translated.
+- There are no clocks; every game is untimed.
+- The browser tests use headless Chrome on Linux. Other browsers, touch
+  devices and screen readers have not been tested.
