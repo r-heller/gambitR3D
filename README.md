@@ -18,8 +18,9 @@ package covers the whole loop:
 - an optional, isolated PyTorch worker that trains and plays a small
   transformer.
 
-Everything runs on your computer. Nothing needs a network connection or an
-account. Python is needed only if you train a model.
+Play, analysis, the database and coaching run on your computer, offline and
+without an account. Python is needed only to train a model or play against
+one. Setting it up downloads the pinned packages once.
 
 The rules are an experimental project convention (`experimental-v0.1`), not
 an official rulebook. Where the source concept left a rule open, the profile
@@ -36,6 +37,8 @@ functions use the prefix `g3_`.
 ```r
 # install.packages("remotes")
 remotes::install_github("r-heller/gambitR3D")
+# or from a local copy of the source:
+remotes::install_local("path/to/gambitR3D")
 ```
 
 The package compiles C++ code, so it needs a compiler: Rtools on Windows,
@@ -158,11 +161,13 @@ reference only, because they cannot play this variant.
 
 ## Status and limits
 
-This is a first release of an experimental variant. The numbers below come
-from the package's own tests on one Linux machine.
+This is a first release of an experimental variant. The numbers below were
+measured on one Linux machine.
 
-- **Engine.** The compiled engine and the R reference agree on the legal
-  actions of 3,500 test positions and on 240 complete searches. The search
+- **Engine.** The compiled engine and the R reference agreed on the legal
+  actions of 3,500 positions and on 240 complete searches. This was checked
+  during development and again in an independent audit; the test suite
+  repeats a smaller sample on every run. The search
   visits about 130,000 positions a second, so 100,000 positions take
   about 0.8 s.
 - **Search strength.** It was measured only against weak baselines: in 144
@@ -175,7 +180,6 @@ from the package's own tests on one Linux machine.
   pipeline works.
 - **App testing.** The browser tests ran in headless Chrome on Linux. Other
   browsers, touch devices and screen readers have not been tested.
-- **Resumed games.** A game resumed from the catalogue resumes as hotseat.
 - **Model play.** Each move against a model starts a model worker, which takes
   a few seconds.
 - **Not supported.** The package reads and writes no FEN or PGN, because

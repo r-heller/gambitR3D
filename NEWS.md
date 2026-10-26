@@ -11,7 +11,7 @@ variant.
   decisions marking which rules come from the supplied concept and which are
   proposed resolutions. It is a project convention, not an official rulebook.
 * A rules engine in R, the reference implementation, and a compiled port
-  (`src/engine.cpp`) that gives identical results and runs the search about 150
+  (`src/engine.cpp`) that gives identical results and runs the search 60 to 70
   times faster. `options(gambitR3D.engine = "r")` selects the R reference.
 
 ## Playing and recording

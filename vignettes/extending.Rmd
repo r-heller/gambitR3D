@@ -31,8 +31,8 @@ tensors for states and candidate actions that R encoded. Neither can make a
 move legal.
 
 The engine has two interchangeable back ends: R code, which is the
-reference, and a compiled port in `src/engine.cpp` that runs the search about
-150 times faster. Tests compare them position by position: legal actions in
+reference, and a compiled port in `src/engine.cpp` that runs the search 60 to
+70 times faster. Tests compare them position by position: legal actions in
 the same order, the same repetition-key text and evaluation, and identical
 search results (scores, bounds, node counts, principal variations). Select
 the R reference with:

@@ -102,8 +102,6 @@ stops when the session ends.
 
 ## Known limits
 
-- A game resumed from the catalogue comes back as a hotseat game, because the
-  catalogue does not store the computer opponent's settings.
 - Playing against a trained model starts a model worker for every move, which
   takes a few seconds.
 - Move notation from the engine (such as `P W:c2-W:c4`) is not translated.
