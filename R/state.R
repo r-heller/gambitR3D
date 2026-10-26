@@ -218,7 +218,7 @@ g3_new_game <- function(profile = "experimental-v0.1", players = NULL) {
 #' pcs <- base::data.frame(
 #'   id = c("wK", "wR", "bK"), type = c("K", "R", "K"),
 #'   color = c("white", "white", "black"),
-#'   square_id = c("W:0:0", "W:3:0", "B:3:3")
+#'   square_id = c("W:0:0", "W:2:0", "B:3:3")
 #' )
 #' st <- gambitR3D::g3_setup_position(pcs)
 #' base::nrow(gambitR3D::g3_legal_actions(st))
