@@ -34,6 +34,8 @@
   };
   G3.boards = {};
   G3.prefsSynced = false;
+  // How long a board waits for the server's answer to an action (ms).
+  G3.answerTimeoutMs = 20000;
   const STORE_KEY = 'gambitR3D.prefs.v1';
   const MAIN = ['W', 'N', 'B'];
   const BOARD_ORDER = ['B', 'BQ', 'BK', 'N', 'W', 'WQ', 'WK'];
@@ -264,6 +266,8 @@
       this.state = null;
       this.selection = null;
       this.pending = null;
+      this.late = null;
+      this.lateNote = null;
       this.awaitRevision = null;
       this.chooser = null;
       this.message = null;
@@ -294,6 +298,11 @@
         this.selection = null;
         this.chooser = null;
         this.message = null;
+        if (this.lateNote !== null && p.revision >= this.lateNote) {
+          // The late commit's position has arrived: keep saying why it moved.
+          this.message = { type: 'info', text: G3.t('board.late_commit') };
+          this.lateNote = null;
+        }
         if (this.lastAnnounced === null) {
           this.lastAnnounced = p.revision;
         } else if (p.announce && p.announce.revision === p.revision && this.lastAnnounced !== p.revision) {
@@ -437,17 +446,26 @@
       this.render();
       setInput(this.id + '-request', req);
       const self = this;
+      this.late = null;
       window.clearTimeout(this.pendingTimer);
+      // No answer after 20 s: the board stops waiting but remembers the
+      // request, because the server may still commit it. The message says
+      // only what is known; a late answer is reconciled in onAck().
       this.pendingTimer = window.setTimeout(function () {
         if (self.pending && self.pending.req.request_id === req.request_id) {
           self.pending = null;
+          self.late = req.request_id;
           self.flash('error', G3.t('board.no_answer'));
           self.render();
         }
-      }, 20000);
+      }, G3.answerTimeoutMs);
     }
 
     onAck(ack) {
+      if (this.late && ack.request_id === this.late && !this.pending) {
+        this.onLateAck(ack);
+        return;
+      }
       if (!this.pending || ack.request_id !== this.pending.req.request_id) return;
       window.clearTimeout(this.pendingTimer);
       const ok = ack.status === 'committed' || (ack.status === 'duplicate' && ack.original_status === 'committed');
@@ -465,6 +483,28 @@
       } else {
         // Keep the selection; explain beside the attempted action.
         this.message = { type: 'error', text: ack.message_text || G3.t('ack.invalid_request') };
+      }
+      this.render();
+    }
+
+    // The answer to a request the board had stopped waiting for: a commit
+    // updates the board through the state message (awaited here), anything
+    // else is reported as not played.
+    onLateAck(ack) {
+      this.late = null;
+      const ok = ack.status === 'committed' || (ack.status === 'duplicate' && ack.original_status === 'committed');
+      if (ack.status === 'info') {
+        this.message = { type: 'info', text: ack.message_text || '' };
+      } else if (ok) {
+        this.selection = null;
+        this.chooser = null;
+        if (!this.state || this.state.revision < ack.revision) {
+          this.awaitRevision = ack.revision;
+          this.lateNote = ack.revision;
+        }
+        this.message = { type: 'info', text: G3.t('board.late_commit') };
+      } else {
+        this.message = { type: 'error', text: G3.t('board.late_rejected', { reason: ack.message_text || G3.t('ack.invalid_request') }) };
       }
       this.render();
     }
@@ -1177,6 +1217,20 @@
         });
       }
     });
+    // Enables or disables a form control (and a file input's browse button)
+    // that Shiny has no update function for.
+    S.addCustomMessageHandler('g3-disable', function (m) {
+      const node = document.getElementById(m.id);
+      if (!node) return;
+      node.disabled = !!m.disabled;
+      const group = node.closest('.input-group');
+      if (group) {
+        group.querySelectorAll('.btn-file, .btn').forEach(function (b) {
+          b.classList.toggle('disabled', !!m.disabled);
+          if (m.disabled) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled');
+        });
+      }
+    });
     S.addCustomMessageHandler('g3-i18n', function (m) {
       G3.messages = m.messages || {};
       G3.lang = m.lang || 'en';
@@ -1242,6 +1296,7 @@
         revision: b.state && b.state.revision, game_id: b.state && b.state.game_id,
         position_key: b.state && b.state.position_key, side: b.state && b.state.side,
         selection: b.selection, view: b.view, fallback: b.fallback, pending: !!b.pending,
+        late: b.late, message: b.message ? b.message.text : null,
         scene: b.scene ? b.scene.info() : null, n_cells: Object.keys(b.cells).length
       };
     },

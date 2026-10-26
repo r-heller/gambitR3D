@@ -256,7 +256,11 @@ g3_run_app <- function(db_path = NULL, host = "127.0.0.1", port = NULL, launch.b
         return(invisible(NULL))
       }
       ack <- app$resume_in_play(game)
-      if (identical(ack$status, "committed")) app$go("play") else app$notify(.g3_ack_text(ack, "en"), "error")
+      if (identical(ack$status, "committed")) {
+        app$go("play")
+      } else {
+        app$notify(.g3_ack_text(ack, shiny::isolate(app$lang())), "error")
+      }
       invisible(ack)
     }
     app$review <- shiny::reactiveVal(NULL)

@@ -251,3 +251,34 @@ test_that("the board message carries legal actions, castling and platform result
   expect_identical(pa$result_coord, sq$coord[sq$square_id == "WK:0:0"])
   expect_identical(pa$result_orientation, 180L)
 })
+
+test_that("an unexpected R error in the engine call becomes a rejected request; the game stays playable", {
+  dir <- withr::local_tempdir()
+  sv <- counting_saver(dir)
+  store <- .g3_new_store(g3_new_game(), "live", saver = sv$fun)
+  hash0 <- g3_game_hash(store$game)
+  local({
+    testthat::local_mocked_bindings(g3_game_apply = function(...) stop("injected engine failure"))
+    ack <- .g3_dispatch(store, dispatch_req(store, "m:W:1:1-W:1:3", request_id = "boom-1"))
+    expect_identical(ack$status, "rejected")
+    expect_identical(ack$reason, "internal_error")
+    expect_match(ack$message, "injected engine failure", fixed = TRUE)
+    # Translated, generic text with the detail; never an R error.
+    expect_match(.g3_ack_text(ack, "en"), "unexpected error.*Nothing was changed.*injected engine failure")
+    expect_match(.g3_ack_text(ack, "de"), "unerwarteter Fehler.*injected engine failure")
+  })
+  expect_identical(store$revision, 0L)
+  expect_identical(sv$n, 0L)
+  expect_identical(g3_game_hash(store$game), hash0)
+  # A base R error in a session event (not a g3 condition) is caught too.
+  local({
+    testthat::local_mocked_bindings(g3_game_event = function(...) sqrt("x"))
+    ack <- .g3_dispatch(store, utils::modifyList(dispatch_req(store, NA_character_), list(kind = "event",
+                                                                                         event = "resign")))
+    expect_identical(ack$reason, "internal_error")
+  })
+  # With the engine back, the same position is still playable.
+  ok <- .g3_dispatch(store, dispatch_req(store, "m:W:1:1-W:1:3"))
+  expect_identical(ok$status, "committed")
+  expect_identical(store$revision, 1L)
+})

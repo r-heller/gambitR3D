@@ -174,20 +174,34 @@
   out <- if (identical(st$status, "succeeded")) {
     d <- tryCatch(g3_job_result(job), error = function(e) NULL)
     if (!inherits(d, "g3_decision") || is.na(d$action_id)) {
-      list(status = "failed", message = "The opponent returned no action.")
+      list(status = "failed", message = "The opponent returned no action.", key = "opponent.no_action")
     } else if (!.g3_tag_current(opp$tag, store)) {
       list(status = "stale", decision = d)
     } else {
       list(status = "decision", decision = d, tag = opp$tag, job_id = job$job_id)
     }
   } else {
-    list(status = "failed", message = paste0(st$status, if (!is.na(st$error %||% NA)) paste0(": ", st$error) else ""))
+    list(status = "failed", message = paste0(st$status, if (!is.na(st$error %||% NA)) paste0(": ", st$error) else ""),
+         job_status = st$status, stop_reason = st$stop_reason %||% NA_character_, error = st$error %||% NA_character_)
   }
   opp$log <- c(opp$log, paste(.g3_now(), out$status, job$job_id))
   unlink(job$dir, recursive = TRUE)
   opp$job <- NULL
   opp$started <- NULL
   out
+}
+
+# Why the opponent produced no move, in the UI language: the job's state
+# and stop reason in words, plus the error when it says more.
+#' @noRd
+.g3_opponent_failure_text <- function(res, lang = "en") {
+  if (!is.null(res$key)) return(.g3_t(res$key, lang))
+  if (is.null(res$job_status)) return(res$message %||% "")
+  reason <- res$stop_reason
+  err <- res$error
+  paste0(.g3_t(paste0("job.status.", res$job_status), lang),
+         if (length(reason) == 1L && !is.na(reason)) paste0(" (", .g3_stop_reason_text(reason, lang), ")"),
+         if (length(err) == 1L && !is.na(err) && nzchar(err) && !identical(err, reason)) paste0(": ", err))
 }
 
 # Request for the dispatcher built from a current opponent decision.

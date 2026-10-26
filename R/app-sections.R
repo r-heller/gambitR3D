@@ -18,7 +18,7 @@
                                  t("common.not_connected")),
                  " ", htmltools::strong(t(title_key))),
     htmltools::p(t(body_key, ...)),
-    htmltools::p(class = "g3-muted g3-small", t("common.needs", what = paste(needs, collapse = ", ")))
+    if (length(needs)) htmltools::p(class = "g3-muted g3-small", t("common.needs", what = paste(needs, collapse = ", ")))
   )
 }
 

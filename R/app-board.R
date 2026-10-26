@@ -283,6 +283,7 @@
   if (identical(ack$status, "info")) return(ack$message %||% "")
   if (identical(ack$status, "duplicate")) return(.g3_t("ack.duplicate", lang))
   key <- paste0("ack.", ack$reason %||% "invalid_request")
+  if (identical(ack$reason, "internal_error")) return(.g3_t(key, lang, detail = ack$message %||% ""))
   txt <- .g3_t(key, lang)
   if (identical(txt, key)) txt <- .g3_t("ack.invalid_request", lang)
   if (identical(ack$reason, "save_failed") || identical(ack$reason, "invalid_request")) {

@@ -235,3 +235,159 @@ test_that("without an ML environment training is refused with a reason and nothi
     expect_false(dir.exists(file.path(dir, "training")))
   })
 })
+
+# ---- repair pass (audit F02-F05, F07, F08)
+
+test_that("invalid training numbers start nothing and say which field is wrong, in the UI language", {
+  dir <- withr::local_tempdir()
+  withr::local_options(gambitR3D.ml_env = file.path(dir, "no-such-env"))
+  shiny::testServer(sec_server(dir), {
+    app <- session$userData$g3
+    good <- list(`training-steps` = 8, `training-positions` = 128, `training-data_games` = 4,
+                 `training-seed` = 20261026)
+    do.call(session$setInputs, utils::modifyList(good, list(`training-steps` = NA, `training-train` = 1)))
+    msg <- html_of(output$`training-train_msg`)
+    expect_match(msg, "Optimizer steps must be a whole number from 1 to 20.", fixed = TRUE)
+    expect_match(msg, "Nothing was started.", fixed = TRUE)
+    for (bad in list(list(`training-steps` = 500), list(`training-steps` = 2.5), list(`training-positions` = 4),
+                     list(`training-seed` = NA), list(`training-data_games` = -1))) {
+      do.call(session$setInputs, c(utils::modifyList(good, bad), list(`training-train` = stats::runif(1))))
+      expect_match(html_of(output$`training-train_msg`), "must be a whole number")
+    }
+    expect_null(app$jobs$training)
+    expect_false(dir.exists(file.path(dir, "jobs")))
+    expect_false(dir.exists(file.path(dir, "training")))
+    # Valid numbers get as far as the next honest refusal (no environment).
+    do.call(session$setInputs, c(good, list(`training-train` = 99)))
+    expect_match(html_of(output$`training-train_msg`), "No ML environment")
+    expect_false(grepl("must be a whole number", html_of(output$`training-train_msg`)))
+    # Self-play numbers are checked the same way, in German too.
+    session$setInputs(`settings-lang` = "de")
+    session$setInputs(`training-sp_games` = 1, `training-sp_plies` = NA, `training-sp_sims` = 8,
+                      `training-selfplay` = 1)
+    expect_match(html_of(output$`training-sp_msg`), "Halbzug.*muss eine ganze Zahl von 4 bis 80 sein")
+    expect_match(html_of(output$`training-sp_msg`), "Es wurde nichts gestartet.", fixed = TRUE)
+    expect_null(app$jobs$self_play)
+  })
+})
+
+test_that("review exercises join the practice list only when added; the button says why it is unavailable", {
+  dir <- withr::local_tempdir()
+  shiny::testServer(sec_server(dir), {
+    app <- session$userData$g3
+    n_cat <- length(g3_exercise_catalogue()$exercises)
+    expect_match(html_of(output$`training-sources`), "Run a review in Coach first.", fixed = TRUE)
+    session$setInputs(`training-from_review` = 1)
+    expect_match(html_of(output$`training-generate_msg`), "Run a review in Coach first.", fixed = TRUE)
+    # A review with one exercise (a copy of an authored one under a new id).
+    ex <- g3_exercise_catalogue()$exercises[[1]]
+    ex$exercise_id <- "review-repair-pass-1"
+    ex$provenance$source <- "review"
+    app$review(list(exercises = list(exercises = list(ex))))
+    session$flushReact()
+    expect_match(html_of(output$`training-sources`), "The last review has 1 exercise(s)", fixed = TRUE)
+    expect_match(html_of(output$`training-sources`), "0 from the last review", fixed = TRUE)
+    expect_match(html_of(output$`training-plan`), sprintf("All exercises (%d)", n_cat), fixed = TRUE)
+    session$setInputs(`training-from_review` = 2)
+    expect_match(html_of(output$`training-generate_msg`), "1 exercise(s) from the review are in the list.", fixed = TRUE)
+    expect_match(html_of(output$`training-sources`), "1 from the last review", fixed = TRUE)
+    expect_match(html_of(output$`training-plan`), sprintf("All exercises (%d)", n_cat + 1L), fixed = TRUE)
+    expect_match(html_of(output$`training-plan`), "review-repair-pass-1", fixed = TRUE)
+    # A review without exercises is said so, and adds nothing.
+    app$review(list(exercises = list(exercises = list())))
+    session$setInputs(`training-from_review` = 3)
+    expect_match(html_of(output$`training-generate_msg`), "The last review produced no exercises.", fixed = TRUE)
+  })
+})
+
+test_that("a practice attempt that cannot be recorded says so; recording switched off is said too", {
+  dir <- withr::local_tempdir()
+  # A file where the learner folder should be: the profile cannot be written.
+  writeLines("not a folder", file.path(dir, "learner"))
+  shiny::testServer(sec_server(dir), {
+    app <- session$userData$g3
+    notes <- character()
+    app$notify <- function(text, type = "message") notes <<- c(notes, text)
+    ex <- g3_exercise_catalogue()$exercises[[1]]
+    session$setInputs(`training-start` = list(value = ex$exercise_id, nonce = 1))
+    tok <- list(game_id = paste0("exercise_", substr(ex$exercise_id, 1L, 12L)), revision = 0L,
+                state_hash = .g3_state_hash(ex$start_state))
+    session$setInputs(`training-board-request` = c(tok, list(kind = "action", request_id = "r1",
+                                                             action_id = ex$primary_action_id)))
+    fb <- html_of(output$`training-feedback`)
+    expect_match(fb, "Solved")
+    expect_match(fb, "This attempt could not be saved to your learner profile", fixed = TRUE)
+    expect_match(fb, 'role="alert"', fixed = TRUE)
+    expect_true(any(grepl("could not be saved", notes)))
+  })
+  dir2 <- withr::local_tempdir()
+  shiny::testServer(sec_server(dir2), {
+    ex <- g3_exercise_catalogue()$exercises[[1]]
+    g3_learner_settings(file.path(dir2, "learner", "profile.json"), use_for_practice = FALSE)
+    session$setInputs(`training-start` = list(value = ex$exercise_id, nonce = 1))
+    tok <- list(game_id = paste0("exercise_", substr(ex$exercise_id, 1L, 12L)), revision = 0L,
+                state_hash = .g3_state_hash(ex$start_state))
+    session$setInputs(`training-board-request` = c(tok, list(kind = "action", request_id = "r1",
+                                                             action_id = ex$primary_action_id)))
+    expect_match(html_of(output$`training-feedback`), "Practice recording is off", fixed = TRUE)
+  })
+})
+
+test_that("without a catalogue the catalogue actions are refused with the reason; nothing is written", {
+  dir <- withr::local_tempdir()
+  shiny::testServer(sec_server(dir, db_path = FALSE), {
+    app <- session$userData$g3
+    expect_null(app$storage()$db)
+    expect_match(html_of(output$`database-status`), "switched off for this session", fixed = TRUE)
+    expect_false(grepl("Needs: DBI", html_of(output$`database-status`), fixed = TRUE))
+    for (out in c("import_report", "export_report", "backup_report")) {
+      expect_match(html_of(output[[paste0("database-", out)]]), "Not available: no game catalogue is open.",
+                   fixed = TRUE)
+    }
+    session$setInputs(`database-backup` = 1)
+    expect_false(dir.exists(file.path(dir, "backups")))
+    session$setInputs(`database-export_sel` = 1)
+    expect_match(html_of(output$`database-sel_msg`), "Not available", fixed = TRUE)
+    expect_false(dir.exists(file.path(dir, "exports")))
+    src <- file.path(withr::local_tempdir(), "one.g3.json")
+    g3_write_game(g3_new_game(), src)
+    session$setInputs(`database-import_files` = data.frame(name = basename(src), size = file.size(src),
+                                                           type = "application/json", datapath = src))
+    expect_false(dir.exists(file.path(dir, "imports")))
+    expect_match(html_of(output$`database-sel_msg`), "Not available", fixed = TRUE)
+    # The save status names the folder files really go to.
+    expect_match(html_of(output$`play-files-status`), file.path(dir, "games"), fixed = TRUE)
+    session$setInputs(`settings-lang` = "de")
+    expect_match(html_of(output$`database-backup_report`), "Nicht verfügbar", fixed = TRUE)
+  })
+})
+
+test_that("the save status names the catalogue file while the catalogue is the backend", {
+  skip_if_not_installed("RSQLite")
+  dir <- withr::local_tempdir()
+  shiny::testServer(sec_server(dir), {
+    app <- session$userData$g3
+    expect_identical(app$storage()$backend, "db")
+    st <- html_of(output$`play-files-status`)
+    expect_match(st, paste("game database", app$storage()$db_path), fixed = TRUE)
+    expect_false(grepl(paste0("action to ", file.path(dir, "games")), st, fixed = TRUE))
+  })
+})
+
+test_that("notifications from starting a model game use the session language", {
+  dir <- withr::local_tempdir()
+  failing <- function(game) stop("disk full")
+  testthat::local_mocked_bindings(.g3_build_new_game = function(...) g3_new_game())
+  shiny::testServer(sec_server(dir, saver = failing), {
+    app <- session$userData$g3
+    notes <- character()
+    app$notify <- function(text, type = "message") notes <<- c(notes, text)
+    session$setInputs(`settings-lang` = "en")
+    session$setInputs(`settings-lang` = "de")
+    expect_identical(app$lang(), "de")
+    app$start_model_game("any-model")
+    expect_length(notes, 1L)
+    expect_match(notes, .g3_t("ack.save_failed", "de"), fixed = TRUE)
+    expect_false(grepl(.g3_t("ack.save_failed", "en"), notes, fixed = TRUE))
+  })
+})

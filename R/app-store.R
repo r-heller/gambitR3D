@@ -156,10 +156,17 @@
       },
       .g3_abort("g3_invalid_state", "Unknown request kind.")
     ),
-    g3_error = function(e) e
+    g3_error = function(e) e,
+    # Any other error is a defect, not a user mistake: it becomes a
+    # rejected request (the game stays as it was and playable), never an
+    # error in the session's observer.
+    error = function(e) structure(class = c("g3_app_internal", "error", "condition"),
+                                  list(message = conditionMessage(e), call = NULL))
   )
   if (inherits(next_game, "error")) {
-    reason <- if (inherits(next_game, "g3_illegal_action")) {
+    reason <- if (inherits(next_game, "g3_app_internal")) {
+      "internal_error"
+    } else if (inherits(next_game, "g3_illegal_action")) {
       if (!is.na(game$metadata$result)) "game_over" else "illegal_action"
     } else if (inherits(next_game, "g3_stale_revision")) {
       "stale_state"
@@ -172,7 +179,8 @@
   # broken invariant before anything is saved. (Loaded games were already
   # fully replayed by g3_read_game(); replaying every game on every move
   # would make each commit cost grow with the game's length.)
-  valid <- g3_validate_state(next_game$state, error = FALSE)
+  valid <- tryCatch(g3_validate_state(next_game$state, error = FALSE),
+                    error = function(e) list(valid = FALSE, problems = conditionMessage(e)))
   if (!isTRUE(valid$valid)) {
     return(reject("invalid_request", paste(valid$problems, collapse = "; ")))
   }
@@ -231,22 +239,29 @@
   games_dir <- file.path(root, "games")
   backend <- "file"
   note <- NA_character_
+  # The same note as an i18n key (with the error text) for the UI.
+  note_key <- NA_character_
+  note_error <- NA_character_
   db <- NULL
   use_db <- !isFALSE(db_path)
   if (use_db) {
     db_path <- normalizePath(path.expand(db_path %||% file.path(root, "games.sqlite")), mustWork = FALSE)
     if (!requireNamespace("RSQLite", quietly = TRUE) || !requireNamespace("DBI", quietly = TRUE)) {
       note <- "The game catalogue needs the 'DBI' and 'RSQLite' packages; games are saved as files."
+      note_key <- "storage.note_packages"
     } else {
       if (!dir.exists(dirname(db_path))) dir.create(dirname(db_path), recursive = TRUE, showWarnings = FALSE)
       db <- tryCatch(suppressWarnings(g3_open_game_db(db_path)), error = function(e) {
         note <<- paste0("The game catalogue could not be opened (", conditionMessage(e), "); games are saved as files.")
+        note_key <<- "storage.note_open_failed"
+        note_error <<- conditionMessage(e)
         NULL
       })
       if (!is.null(db)) backend <- "db"
     }
   } else {
     db_path <- NA_character_
+    note_key <- "storage.note_off"
   }
   save_file <- function(game, ui = NULL) {
     if (!dir.exists(games_dir) && !dir.create(games_dir, recursive = TRUE, showWarnings = FALSE)) {
@@ -316,7 +331,17 @@
     invisible(TRUE)
   }
   list(root = root, games_dir = games_dir, backend = backend, db = db, db_path = db_path, note = note,
+       note_key = note_key, note_error = note_error,
        save = save, list_games = list_games, read = read, close = close)
+}
+
+# The storage service's note (why the catalogue is not used) in the UI
+# language, or NULL when there is nothing to say.
+#' @noRd
+.g3_storage_note <- function(storage, lang = "en") {
+  key <- storage$note_key %||% NA_character_
+  if (length(key) == 1L && !is.na(key)) return(.g3_t(key, lang, error = storage$note_error %||% ""))
+  if (!is.na(storage$note %||% NA)) storage$note else NULL
 }
 
 #' Read a game or position file for the app

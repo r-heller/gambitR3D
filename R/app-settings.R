@@ -98,7 +98,7 @@
       htmltools::tagList(
         htmltools::p(class = "g3-small", .g3_t("settings.storage_now", lang, dir = st$root)),
         htmltools::p(class = "g3-muted g3-small", .g3_t(paste0("settings.backend_", st$backend), lang)),
-        if (!is.na(st$note %||% NA)) htmltools::p(class = "g3-muted g3-small", st$note)
+        if (!is.null(txt <- .g3_storage_note(st, lang))) htmltools::p(class = "g3-muted g3-small", txt)
       )
     })
     shiny::observeEvent(input$storage_apply, {

@@ -155,12 +155,17 @@
 .g3_save_status <- function(store, storage, lang = "en") {
   t <- function(key, ...) .g3_t(key, lang, ...)
   r <- store$receipt
-  note <- if (!is.na(storage$note %||% NA)) htmltools::p(class = "g3-muted g3-small", storage$note)
+  txt <- .g3_storage_note(storage, lang)
+  note <- if (!is.null(txt)) htmltools::p(class = "g3-muted g3-small", txt)
   if (is.null(r)) {
-    return(htmltools::tagList(
-      htmltools::p(class = "g3-muted g3-small", t("files.not_saved_yet", dir = storage$games_dir)),
-      note
-    ))
+    # Name the place the autosave really writes to: the catalogue file
+    # when the catalogue is open, otherwise the games folder.
+    pending <- if (identical(storage$backend, "db")) {
+      t("files.not_saved_yet_db", path = storage$db_path)
+    } else {
+      t("files.not_saved_yet", dir = storage$games_dir)
+    }
+    return(htmltools::tagList(htmltools::p(class = "g3-muted g3-small", pending), note))
   }
   where <- if (identical(r$backend, "db")) t("files.saved_db", path = r$path) else t("files.saved_file", path = r$path)
   htmltools::tagList(

@@ -18,7 +18,40 @@
 # registered checkpoint that passes `g3_validate_model()`.
 
 .G3_TRAIN_LIMITS <- list(max_steps = 20L, max_positions = 512L, wall_seconds = 600, threads = 2L, max_games = 2L,
-                         max_plies = 80L)
+                         max_plies = 80L, grace_seconds = 120)
+
+# The numeric fields of "Train opponent": input id, label key and the
+# accepted whole-number range. Anything else (empty, not a number, a
+# fraction, out of range) stops the start with a message.
+.G3_TRAIN_FIELDS <- list(
+  steps = list(label = "trainer.steps", min = 1L, max = .G3_TRAIN_LIMITS$max_steps),
+  positions = list(label = "trainer.positions", min = 32L, max = .G3_TRAIN_LIMITS$max_positions),
+  data_games = list(label = "trainer.data_games", min = 1L, max = 8L),
+  seed = list(label = "trainer.seed", min = 1L, max = .Machine$integer.max),
+  sp_games = list(label = "trainer.sp_games", min = 1L, max = .G3_TRAIN_LIMITS$max_games),
+  sp_plies = list(label = "trainer.sp_plies", min = 4L, max = .G3_TRAIN_LIMITS$max_plies),
+  sp_sims = list(label = "trainer.sp_sims", min = 1L, max = 64L)
+)
+
+# Reads whole-number inputs. Returns list(values, problems): `values` holds
+# the integers, `problems` one translated sentence per invalid field.
+#' @noRd
+.g3_train_inputs <- function(input, ids, lang = "en") {
+  values <- list()
+  problems <- character()
+  for (id in ids) {
+    f <- .G3_TRAIN_FIELDS[[id]]
+    x <- input[[id]]
+    v <- if (is.numeric(x) && length(x) == 1L) as.numeric(x) else NA_real_
+    if (is.finite(v) && v == round(v) && v >= f$min && v <= f$max) {
+      values[[id]] <- as.integer(v)
+    } else {
+      problems <- c(problems, .g3_t("trainer.invalid_input", lang, field = .g3_t(f$label, lang),
+                                    min = f$min, max = f$max))
+    }
+  }
+  list(values = values, problems = problems)
+}
 
 #' @noRd
 .g3_training_ui <- function(id, lang = "en") {
@@ -98,6 +131,7 @@
       ),
       htmltools::div(class = "g3-btn-row",
                      shiny::actionButton(ns("train"), t("trainer.start"), class = "g3-btn btn-primary")),
+      shiny::uiOutput(ns("train_msg")),
       shiny::uiOutput(ns("train_job")),
       shiny::uiOutput(ns("train_result"))
     ),
@@ -112,6 +146,7 @@
       ),
       htmltools::div(class = "g3-btn-row",
                      shiny::actionButton(ns("selfplay"), t("trainer.sp_start"), class = "g3-btn btn-outline-secondary")),
+      shiny::uiOutput(ns("sp_msg")),
       shiny::uiOutput(ns("sp_job")),
       shiny::uiOutput(ns("sp_result"))
     )
@@ -142,10 +177,12 @@
       file.path(app$storage()$root, "learner", "profile.json")
     })
     generated <- shiny::reactiveVal(NULL)
+    from_review <- shiny::reactiveVal(NULL)   # exercises added from a review
     gen_msg <- shiny::reactiveVal(NULL)
     active <- shiny::reactiveVal(NULL)       # the g3_exercise in progress
     hints <- shiny::reactiveVal(list())
     attempt <- shiny::reactiveVal(NULL)
+    record_note <- shiny::reactiveVal(NULL)  # what happened to the attempt's record
     revealed <- shiny::reactiveVal(FALSE)
     profile_msg <- shiny::reactiveVal(NULL)
 
@@ -154,33 +191,49 @@
       cat <- catalogue()
       parts <- list()
       if (!inherits(cat, "error")) parts <- c(parts, cat$exercises)
-      rv <- if (is.function(app$review)) app$review() else NULL
-      if (!is.null(rv) && length(rv$exercises$exercises)) parts <- c(parts, rv$exercises$exercises)
+      parts <- c(parts, from_review())
       g <- generated()
       if (!is.null(g)) parts <- c(parts, g$exercises)
       ids <- vapply(parts, function(e) e$exercise_id, "")
       .g3_exercise_set(parts[!duplicated(ids)], provenance = list(source = "app"))
     })
 
+    last_review <- shiny::reactive(if (is.function(app$review)) app$review() else NULL)
+    review_exercises <- function(rv) if (is.null(rv)) list() else rv$exercises$exercises %||% list()
     output$sources <- shiny::renderUI({
       l <- lang()
       cat <- catalogue()
-      rv <- if (is.function(app$review)) app$review() else NULL
+      rv <- last_review()
       g <- generated()
       n_cat <- if (inherits(cat, "error")) 0L else length(cat$exercises)
+      n_rv <- length(review_exercises(rv))
       htmltools::tagList(
         htmltools::p(class = "g3-small", .g3_t("practice.sources", l, catalogue = n_cat,
-                                               review = if (is.null(rv)) 0L else length(rv$exercises$exercises),
+                                               review = length(from_review()),
                                                generated = if (is.null(g)) 0L else length(g$exercises))),
+        # Why the review button is (un)available, in words.
+        htmltools::p(class = "g3-muted g3-small",
+                     if (is.null(rv)) .g3_t("practice.need_review", l)
+                     else if (!n_rv) .g3_t("practice.review_none", l)
+                     else .g3_t("practice.review_available", l, n = n_rv)),
         if (inherits(cat, "error")) htmltools::p(class = "g3-error", conditionMessage(cat))
       )
     })
+    shiny::observe({
+      shiny::updateActionButton(session, "from_review", disabled = !length(review_exercises(last_review())))
+    })
+    # The review's exercises join the list only on request; adding again
+    # after a new review replaces the earlier review's exercises.
     shiny::observeEvent(input$from_review, {
-      rv <- if (is.function(app$review)) app$review() else NULL
+      rv <- last_review()
+      ex <- review_exercises(rv)
       if (is.null(rv)) {
         gen_msg(list(type = "error", text = .g3_t("practice.need_review", lang())))
+      } else if (!length(ex)) {
+        gen_msg(list(type = "error", text = .g3_t("practice.review_none", lang())))
       } else {
-        gen_msg(list(type = "ok", text = .g3_t("practice.review_added", lang(), n = length(rv$exercises$exercises))))
+        from_review(ex)
+        gen_msg(list(type = "ok", text = .g3_t("practice.review_added", lang(), n = length(ex))))
       }
     })
     shiny::observeEvent(input$from_analysis, {
@@ -251,6 +304,7 @@
       active(set$exercises[[i]])
       hints(list())
       attempt(NULL)
+      record_note(NULL)
       revealed(FALSE)
     })
 
@@ -291,10 +345,19 @@
       if (inherits(att, "error")) return(.g3_ack(r, "rejected", "invalid_request", conditionMessage(att)))
       attempt(att)
       # The profile's own setting decides: with practice recording off,
-      # g3_learner_record() records nothing and says so.
+      # g3_learner_record() records nothing and says so. A failure to save
+      # is shown, never swallowed.
       path <- shiny::isolate(profile())
       dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
-      try(g3_learner_record(path, att), silent = TRUE)
+      rec <- tryCatch(g3_learner_record(path, att), error = function(e) e)
+      if (inherits(rec, "error")) {
+        record_note(list(type = "error", key = "practice.record_failed", error = conditionMessage(rec)))
+        app$notify(.g3_t("practice.record_failed", l, error = conditionMessage(rec)), "error")
+      } else if (!isTRUE(rec$recorded)) {
+        record_note(list(type = "note", key = "practice.record_off", error = NULL))
+      } else {
+        record_note(NULL)
+      }
       bump_profile()
       .g3_ack(r, "info", NA_character_, .g3_t(paste0("practice.result.", att$status), l))
     }
@@ -320,7 +383,10 @@
       shiny::updateActionButton(session, "retry", disabled = is.null(attempt()))
       shiny::updateActionButton(session, "reveal", disabled = is.null(ex))
     })
-    shiny::observeEvent(input$retry, attempt(NULL))
+    shiny::observeEvent(input$retry, {
+      attempt(NULL)
+      record_note(NULL)
+    })
     shiny::observeEvent(input$reveal, {
       ex <- active()
       if (is.null(ex)) return()
@@ -367,6 +433,10 @@
         if (length(a$continuation$notation %||% NULL)) {
           htmltools::p(class = "g3-small", .g3_t("practice.continuation", l,
                                                  line = paste(a$continuation$notation, collapse = "  \u2192  ")))
+        },
+        if (!is.null(rn <- record_note())) {
+          htmltools::p(class = if (rn$type == "error") "g3-error" else "g3-muted g3-small",
+                       role = if (rn$type == "error") "alert", .g3_t(rn$key, l, error = rn$error))
         }
       )
     })
@@ -468,7 +538,7 @@
     })
 
     # ---- Train opponent
-    env_bg <- .g3_bg_controller(app, session, "ml_check")
+    env_bg <- .g3_bg_controller(app, session, "ml_check", wall_seconds = .G3_BG_WALL$ml_check)
     env_path <- function() .g3_ml_env_path(required = FALSE) %||%
       normalizePath(file.path(tools::R_user_dir("gambitR3D", "data"), "ml-env"), mustWork = FALSE)
     shiny::observeEvent(input$env_check, {
@@ -478,14 +548,29 @@
       env_bg$tick()
       .g3_ml_status_panel(env_bg$state, env_path(), lang())
     })
-    train_job <- .g3_job_controller(app, session, "training", wall_seconds = .G3_TRAIN_LIMITS$wall_seconds)
+    train_job <- .g3_job_controller(app, session, "training", wall_seconds = .G3_TRAIN_LIMITS$wall_seconds,
+                                    grace_seconds = .G3_TRAIN_LIMITS$grace_seconds)
+    train_msg <- shiny::reactiveVal(NULL)
+    sp_msg <- shiny::reactiveVal(NULL)
+    problem_list <- function(m) {
+      if (!length(m)) return(NULL)
+      htmltools::div(class = "g3-error", role = "alert",
+                     htmltools::tags$ul(lapply(m, htmltools::tags$li)),
+                     htmltools::p(.g3_t("trainer.nothing_started", lang())))
+    }
+    output$train_msg <- shiny::renderUI(problem_list(train_msg()))
+    output$sp_msg <- shiny::renderUI(problem_list(sp_msg()))
     shiny::observeEvent(input$train, {
-      steps <- as.integer(min(.G3_TRAIN_LIMITS$max_steps, max(1L, input$steps %||% 8L)))
-      positions <- as.integer(min(.G3_TRAIN_LIMITS$max_positions, max(32L, input$positions %||% 128L)))
-      games <- as.integer(min(8L, max(1L, input$data_games %||% 4L)))
-      seed <- as.integer(input$seed %||% 20261026L)
+      chk <- .g3_train_inputs(input, c("steps", "positions", "data_games", "seed"), lang())
+      train_msg(chk$problems)
+      if (length(chk$problems)) return()
+      steps <- chk$values$steps
+      positions <- chk$values$positions
+      games <- chk$values$data_games
+      seed <- chk$values$seed
       env <- .g3_ml_env_path(required = FALSE)
       if (is.null(env)) {
+        train_msg(.g3_t("trainer.no_env", lang()))
         app$notify(.g3_t("trainer.no_env", lang()), "error")
         return()
       }
@@ -520,19 +605,23 @@
       app$start_model_game(m$id, mode = "policy")
     })
 
-    sp_job <- .g3_job_controller(app, session, "self_play", wall_seconds = .G3_TRAIN_LIMITS$wall_seconds)
+    sp_job <- .g3_job_controller(app, session, "self_play", wall_seconds = .G3_TRAIN_LIMITS$wall_seconds,
+                                 grace_seconds = .G3_TRAIN_LIMITS$grace_seconds)
     shiny::observeEvent(input$selfplay, {
+      chk <- .g3_train_inputs(input, c("sp_games", "sp_plies", "sp_sims"), lang())
+      sp_msg(chk$problems)
+      if (length(chk$problems)) return()
       m <- trained_model()
       model_id <- if (!is.null(m) && m$valid) m$id else .g3_latest_trained_model()
       if (is.null(model_id)) {
+        sp_msg(.g3_t("trainer.sp_need_model", lang()))
         app$notify(.g3_t("trainer.sp_need_model", lang()), "error")
         return()
       }
       out <- file.path(app$storage()$root, "self-play", paste0("run-", format(Sys.time(), "%Y%m%d-%H%M%S")))
       sp_job$start("self_play", list(
-        config = list(model = model_id, games = as.integer(min(.G3_TRAIN_LIMITS$max_games, input$sp_games %||% 1L)),
-                      max_plies = as.integer(min(.G3_TRAIN_LIMITS$max_plies, input$sp_plies %||% 40L)),
-                      simulations = as.integer(min(64L, input$sp_sims %||% 8L)), fixtures = character(),
+        config = list(model = model_id, games = chk$values$sp_games, max_plies = chk$values$sp_plies,
+                      simulations = chk$values$sp_sims, fixtures = character(),
                       threads = .G3_TRAIN_LIMITS$threads, ml_env = .g3_ml_env_path(required = FALSE)),
         output_dir = out
       ), tag = list(model = model_id, output_dir = out), label = "self_play")
@@ -588,6 +677,9 @@
   if (identical(st$status, "running")) {
     return(htmltools::p(class = "g3-progress", role = "status", htmltools::span(class = "g3-spinner", `aria-hidden` = "true"),
                         t("trainer.env_checking", path = path)))
+  }
+  if (identical(st$status, "timed_out")) {
+    return(htmltools::p(class = "g3-error", role = "alert", t("trainer.env_timed_out", s = st$wall_seconds)))
   }
   if (!is.null(st$error)) return(htmltools::p(class = "g3-error", role = "alert", st$error))
   r <- st$result

@@ -239,7 +239,7 @@
           opp$status <- "idle"
         } else {
           opp$status <- "failed"
-          opp$message <- res$message
+          opp$message <- .g3_opponent_failure_text(res, lang())
         }
         bump_opp()
       })

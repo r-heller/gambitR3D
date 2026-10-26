@@ -10,18 +10,27 @@
 #   attempt of the same job), and reports every state honestly: queued,
 #   running (with the job's own progress unit, or "progress cannot be
 #   estimated"), succeeded, failed, cancelled, timed_out, blocked,
-#   interrupted.
+#   interrupted. A cancel the user asked for is remembered, so a job that
+#   had to be terminated after its grace period still reads "Cancelled".
 # * `.g3_bg_controller()` runs one internal function in a `callr::r_bg()`
 #   process, for work that has no registered job type (database import and
-#   export, the ML environment check). It is cancellable but not resumable.
+#   export, the ML environment check). It is cancellable but not resumable,
+#   and its process tree is terminated when it exceeds its wall limit.
 #
 # Both report to the header's running-work indicator through `app$set_job()`
 # and stop their processes when the session ends.
 
 .G3_JOB_RUNNING <- c("queued", "running")
 
+# Wall limits (seconds) of the one-off background calls.
+.G3_BG_WALL <- list(import = 600, export = 600, ml_check = 120)
+
+# `grace_seconds` is how long a cancelled job may take to reach its next
+# safe point (and write its checkpoint) before its process tree is
+# terminated; training checks for a stop only between data games, so it
+# gets a longer grace than analysis.
 #' @noRd
-.g3_job_controller <- function(app, session, kind, wall_seconds = 600) {
+.g3_job_controller <- function(app, session, kind, wall_seconds = 600, grace_seconds = 10) {
   st <- new.env(parent = emptyenv())
   st$job <- NULL
   st$status <- NULL
@@ -29,6 +38,8 @@
   st$error <- NULL
   st$tag <- NULL
   st$started <- NULL
+  st$cancel_requested <- FALSE
+  st$grace_seconds <- grace_seconds
   st$draining <- list()
   tick <- shiny::reactiveVal(0L)
   bump <- function() tick(shiny::isolate(tick()) + 1L)
@@ -38,6 +49,7 @@
     if (running()) cancel()
     st$result <- NULL
     st$error <- NULL
+    st$cancel_requested <- FALSE
     st$tag <- tag
     jobs_dir <- file.path(shiny::isolate(app$storage())$root, "jobs")
     dir.create(jobs_dir, recursive = TRUE, showWarnings = FALSE)
@@ -66,23 +78,29 @@
     s <- tryCatch(g3_job_status(st$job), error = function(e) {
       list(status = "failed", error = conditionMessage(e), stop_reason = "status_unreadable")
     })
+    # The user asked for this stop: a process that ended during the grace
+    # period is reported as cancelled, with the real stop reason kept.
+    if (isTRUE(st$cancel_requested) && identical(s$status, "interrupted")) s$status <- "cancelled"
     changed <- !identical(s, st$status)
     st$status <- s
     if (!isTRUE(s$status %in% .G3_JOB_RUNNING)) {
       app$set_job(kind, FALSE)
       res <- tryCatch(g3_job_result(st$job), error = function(e) NULL)
       st$result <- res
-      if (identical(s$status, "failed") || identical(s$status, "blocked") || identical(s$status, "interrupted")) {
-        st$error <- s$error %||% s$stop_reason %||% s$status
-      }
+      # The stop reason is shown on its own line; the error only when it
+      # says something more.
+      err <- s$error %||% NA_character_
+      st$error <- if (s$status %in% c("failed", "blocked", "interrupted") && length(err) == 1L && !is.na(err) &&
+                      nzchar(err) && !identical(err, s$stop_reason)) err
     }
     if (changed) bump()
     invisible(changed)
   }
 
   cancel <- function() {
-    if (is.null(st$job)) return(invisible(NULL))
+    if (is.null(st$job) || isTRUE(st$cancel_requested) && running()) return(invisible(NULL))
     ack <- tryCatch(g3_cancel_job(st$job, wait = FALSE), error = function(e) NULL)
+    st$cancel_requested <- TRUE
     st$draining[[length(st$draining) + 1L]] <- list(job = st$job, since = Sys.time())
     bump()
     invisible(ack)
@@ -97,6 +115,7 @@
       st$job <- job
       st$result <- NULL
       st$error <- NULL
+      st$cancel_requested <- FALSE
       st$status <- list(status = "queued", progress = list(done = 0, total = NA, unit = NA))
       app$set_job(kind, TRUE)
     }
@@ -104,13 +123,16 @@
     invisible(job)
   }
 
-  # Cancelled processes get 5 seconds for a cooperative stop, then the tree
-  # is terminated; their directories stay (they hold the job's record).
+  # Cancelled processes get `grace_seconds` for a cooperative stop, then
+  # g3_cancel_job() terminates the tree and records the job as cancelled
+  # ("terminated_after_grace"); their directories stay (they hold the
+  # job's record).
   drain <- function(force = FALSE) {
     keep <- list()
     for (d in st$draining) {
       alive <- isTRUE(tryCatch(d$job$process$is_alive(), error = function(e) FALSE))
-      if (alive && (force || difftime(Sys.time(), d$since, units = "secs") > 5)) {
+      if (alive && (force || difftime(Sys.time(), d$since, units = "secs") > st$grace_seconds)) {
+        try(g3_cancel_job(d$job, wait = TRUE, grace_seconds = 0), silent = TRUE)
         try(d$job$process$kill_tree(), silent = TRUE)
         alive <- FALSE
       }
@@ -159,6 +181,7 @@
     }
   }
   elapsed <- if (!is.null(ctl$state$started)) round(as.numeric(difftime(Sys.time(), ctl$state$started, units = "secs")))
+  stopping <- status %in% .G3_JOB_RUNNING && isTRUE(ctl$state$cancel_requested)
   shape <- switch(status, succeeded = "\u2713", failed = "!", blocked = "\u2205", interrupted = "!",
                   cancelled = "\u25A0", timed_out = "\u231B", "\u25CB")
   htmltools::div(
@@ -169,14 +192,16 @@
       " ", prog,
       if (!is.null(elapsed) && status %in% .G3_JOB_RUNNING) htmltools::span(class = "g3-muted g3-tnum", t("job.elapsed", s = elapsed))
     ),
-    if (!is.null(s$stop_reason) && !is.na(s$stop_reason) && !status %in% .G3_JOB_RUNNING) {
-      htmltools::p(class = "g3-small", t("job.stop_reason", reason = s$stop_reason))
+    if (stopping) htmltools::p(class = "g3-small", t("job.stopping", s = ctl$state$grace_seconds)),
+    if (length(s$stop_reason) == 1L && !is.na(s$stop_reason) && !status %in% .G3_JOB_RUNNING) {
+      htmltools::p(class = "g3-small", t("job.stop_reason", reason = .g3_stop_reason_text(s$stop_reason, lang)))
     },
-    if (!is.null(ctl$state$error) && !is.na(ctl$state$error)) htmltools::p(class = "g3-error", ctl$state$error),
+    if (length(ctl$state$error) == 1L && !is.na(ctl$state$error)) htmltools::p(class = "g3-error", ctl$state$error),
     htmltools::div(
       class = "g3-btn-row",
-      if (status %in% .G3_JOB_RUNNING) shiny::actionButton(ns(paste0(prefix, "_cancel")), t("job.cancel"),
-                                                          class = "g3-btn btn-outline-secondary"),
+      if (status %in% .G3_JOB_RUNNING && !stopping) {
+        shiny::actionButton(ns(paste0(prefix, "_cancel")), t("job.cancel"), class = "g3-btn btn-outline-secondary")
+      },
       if (resumable && status %in% c("cancelled", "timed_out", "interrupted", "failed") && !is.null(ctl$state$job)) {
         shiny::actionButton(ns(paste0(prefix, "_resume")), t("job.resume"), class = "g3-btn btn-outline-secondary")
       }
@@ -184,16 +209,29 @@
   )
 }
 
+# A job's stop reason in words: the translated text for a known reason
+# code, otherwise the code itself.
+#' @noRd
+.g3_stop_reason_text <- function(reason, lang = "en") {
+  key <- paste0("job.reason.", reason)
+  txt <- .g3_t(key, lang)
+  if (identical(txt, key)) reason else txt
+}
+
 # ------------------------------------------------- one-off background calls
 
+# `wall_seconds` bounds the call: a process still running after it is
+# terminated (with its children) and the state becomes "timed_out".
 #' @noRd
-.g3_bg_controller <- function(app, session, kind) {
+.g3_bg_controller <- function(app, session, kind, wall_seconds = 600) {
   st <- new.env(parent = emptyenv())
   st$proc <- NULL
   st$result <- NULL
   st$error <- NULL
   st$status <- "idle"
   st$tag <- NULL
+  st$started <- NULL
+  st$wall_seconds <- wall_seconds
   tick <- shiny::reactiveVal(0L)
   bump <- function() tick(shiny::isolate(tick()) + 1L)
   start <- function(fun_name, args, tag = NULL) {
@@ -217,6 +255,7 @@
       NULL
     })
     st$status <- if (is.null(st$proc)) "failed" else "running"
+    st$started <- Sys.time()
     app$set_job(kind, !is.null(st$proc))
     bump()
   }
@@ -232,7 +271,16 @@
     if (is.null(st$proc)) return()
     shiny::invalidateLater(300)
     shiny::isolate({
-      if (st$proc$is_alive()) return()
+      if (st$proc$is_alive()) {
+        over <- as.numeric(difftime(Sys.time(), st$started, units = "secs")) > st$wall_seconds
+        if (!over) return()
+        try(st$proc$kill_tree(), silent = TRUE)
+        st$proc <- NULL
+        st$status <- "timed_out"
+        app$set_job(kind, FALSE)
+        bump()
+        return()
+      }
       res <- tryCatch(st$proc$get_result(), error = function(e) e)
       st$proc <- NULL
       app$set_job(kind, FALSE)

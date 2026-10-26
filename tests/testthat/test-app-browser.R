@@ -25,7 +25,7 @@ evidence <- function(name) {
   file.path(d, name)
 }
 
-app_dir <- function(storage, envir = parent.frame()) {
+app_dir <- function(storage, envir = parent.frame(), app_args = "") {
   d <- withr::local_tempdir(.local_envir = envir)
   lib <- Sys.getenv("GAMBITR3D_APP_LIB")
   src <- normalizePath(testthat::test_path("..", ".."), mustWork = FALSE)
@@ -36,13 +36,14 @@ app_dir <- function(storage, envir = parent.frame()) {
   } else {
     "library(gambitR3D)"
   }
-  writeLines(c(loader, sprintf("gambitR3D:::.g3_app(storage_dir = %s)", deparse(storage))), file.path(d, "app.R"))
+  writeLines(c(loader, sprintf("gambitR3D:::.g3_app(storage_dir = %s%s)", deparse(storage), app_args)),
+             file.path(d, "app.R"))
   d
 }
 
 # Each app gets its own fresh headless Chrome, so browser storage and WebGL
 # contexts never leak from one test into the next.
-start_app <- function(width = 1440, height = 1000, envir = parent.frame(), chrome_args = NULL) {
+start_app <- function(width = 1440, height = 1000, envir = parent.frame(), chrome_args = NULL, app_args = "") {
   old <- if (chromote::has_default_chromote_object()) chromote::default_chromote_object() else NULL
   cm <- chromote::Chromote$new(browser = chromote::Chrome$new(
     args = c(chromote::default_chrome_args(), chrome_args)
@@ -53,7 +54,7 @@ start_app <- function(width = 1440, height = 1000, envir = parent.frame(), chrom
     try(cm$close(), silent = TRUE)
   }, envir = envir)
   storage <- withr::local_tempdir(.local_envir = envir)
-  app <- shinytest2::AppDriver$new(app_dir(storage, envir), width = width, height = height,
+  app <- shinytest2::AppDriver$new(app_dir(storage, envir, app_args), width = width, height = height,
                                    load_timeout = 90000, timeout = 30000, seed = 1, name = "g3")
   withr::defer(app$stop(), envir = envir)
   app$wait_for_js("window.G3 && G3.debug.board('play-board') && G3.debug.board('play-board').revision === 0",
@@ -612,3 +613,74 @@ test_that("navigation keeps the game, moves focus, offers More on phones, and sw
   expect_identical(dbg(app)$position_key, key)
   shot(app, "21-reload-restored-dark-german-320.png")
 })
+
+test_that("an answer that arrives after the board stopped waiting is reconciled, never misreported", {
+  browser_ok()
+  app <- start_app(1440, 1000)
+  set_pref(app, "view", "2d")
+  # Hold the next board request in the browser (as a slow network would) and
+  # let the board give up after 0.5 s instead of 20 s.
+  hold <- paste(
+    "G3.answerTimeoutMs = 500; window.__held = null;",
+    "if (!window.__origSet) window.__origSet = Shiny.setInputValue;",
+    "Shiny.setInputValue = function (n, v, o) {",
+    "  if (/-request$/.test(n) && !window.__held) { window.__held = [n, v, o]; return; }",
+    "  return window.__origSet.call(Shiny, n, v, o); };"
+  )
+  release <- function(tamper = FALSE) {
+    app$run_js(paste(
+      "Shiny.setInputValue = window.__origSet; var h = window.__held; window.__held = null;",
+      if (tamper) "h[1] = Object.assign({}, h[1], {expected_state_hash: 'not-the-position'});",
+      "window.__origSet.call(Shiny, h[0], h[1], h[2]);"
+    ))
+  }
+  no_answer <- "No answer from the server yet. The action is not confirmed"
+  # 1. The server answers late with a rejection: the board says so, nothing moved.
+  app$run_js(hold)
+  click_cell(app, "W:1:1")
+  click_cell(app, "W:1:3")
+  app$wait_for_js("!!window.__held && !!G3.debug.board('play-board').late", timeout = 10000)
+  d <- dbg(app)
+  expect_match(d$message, no_answer, fixed = TRUE)
+  expect_identical(d$revision, 0L)
+  shot_viewport(app, "22-no-answer-yet-1440.png", "#play-board .g3-view-2d")
+  release(tamper = TRUE)
+  app$wait_for_js("(G3.debug.board('play-board').message || '').indexOf('did not play the action') >= 0",
+                  timeout = 15000)
+  expect_identical(dbg(app)$revision, 0L)
+  # 2. The server answers late with a commit: the board shows the move and says why.
+  # (A rejected action keeps its piece selected, as on a prompt rejection.)
+  app$run_js(hold)
+  if (!identical(dbg(app)$selection, "W:1:1")) click_cell(app, "W:1:1")
+  click_cell(app, "W:1:3")
+  app$wait_for_js("!!window.__held && !!G3.debug.board('play-board').late", timeout = 10000)
+  expect_identical(dbg(app)$revision, 0L)
+  release()
+  wait_rev(app, 1)
+  app$wait_for_js("(G3.debug.board('play-board').message || '').indexOf('confirmed the action late') >= 0",
+                  timeout = 15000)
+  expect_identical(dbg(app)$revision, 1L)
+  app$wait_for_js("document.querySelector('#play-moves').textContent.indexOf('c2') >= 0", timeout = 15000)
+  shot(app, "23-late-commit-1440.png")
+})
+
+test_that("without a game catalogue the catalogue controls are disabled and say why", {
+  browser_ok()
+  app <- start_app(1440, 1000, app_args = ", db_path = FALSE")
+  click_el(app, ".g3-rail [data-section='database']")
+  app$wait_for_js("document.querySelector('#database-import_files') && document.querySelector('#database-import_files').disabled",
+                  timeout = 15000)
+  for (id in c("database-backup", "database-export_sel", "database-delete_sel", "database-show_quarantine")) {
+    expect_true(app$get_js(sprintf("document.getElementById('%s').disabled", id)), info = id)
+  }
+  expect_true(app$get_js(
+    "document.querySelector('#database-import_files').closest('.input-group').querySelector('.btn-file').classList.contains('disabled')"
+  ))
+  for (out in c("import_report", "export_report", "backup_report")) {
+    expect_match(app$get_js(sprintf("document.getElementById('database-%s').textContent", out)),
+                 "Not available: no game catalogue is open.", fixed = TRUE)
+  }
+  expect_match(app$get_js("document.getElementById('database-status').textContent"), "switched off", fixed = TRUE)
+  shot(app, "24-database-without-catalogue-1440.png")
+})
+

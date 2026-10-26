@@ -111,14 +111,27 @@
     offset <- shiny::reactiveVal(0L)
     detail_id <- shiny::reactiveVal(NULL)
     msg <- shiny::reactiveVal(NULL)
-    import_bg <- .g3_bg_controller(app, session, "import")
-    export_bg <- .g3_bg_controller(app, session, "export")
+    import_bg <- .g3_bg_controller(app, session, "import", wall_seconds = .G3_BG_WALL$import)
+    export_bg <- .g3_bg_controller(app, session, "export", wall_seconds = .G3_BG_WALL$export)
     backup_res <- shiny::reactiveVal(NULL)
     quarantine_open <- shiny::reactiveVal(FALSE)
 
     db <- shiny::reactive({
       app$storage_tick()
       app$storage()$db
+    })
+    # Without a catalogue every catalogue action is disabled, and each card
+    # says why (the buttons would otherwise do nothing).
+    no_db_text <- function(l) {
+      .g3_t("db.action_unavailable", l, reason = .g3_storage_note(shiny::isolate(app$storage()), l) %||% "")
+    }
+    no_db_note <- function(l) htmltools::p(class = "g3-muted g3-small g3-db-off", role = "note", no_db_text(l))
+    shiny::observe({
+      off <- is.null(db())
+      for (b in c("apply", "clear", "export_sel", "delete_sel", "restore_sel", "show_quarantine", "backup")) {
+        shiny::updateActionButton(session, b, disabled = off)
+      }
+      session$sendCustomMessage("g3-disable", list(id = ns("import_files"), disabled = off))
     })
 
     output$status <- shiny::renderUI({
@@ -127,8 +140,10 @@
       l <- lang()
       t <- function(key, ...) .g3_t(key, l, ...)
       if (is.null(st$db)) {
-        return(.g3_unavailable("db.catalogue", "db.unavailable_body", c("DBI", "RSQLite"), l,
-                               reason = st$note %||% ""))
+        # Name the packages only when they are what is missing.
+        needs <- if (identical(st$note_key, "storage.note_packages")) c("DBI", "RSQLite") else character()
+        return(.g3_unavailable("db.catalogue", "db.unavailable_body", needs, l,
+                               reason = .g3_storage_note(st, l) %||% ""))
       }
       d <- st$db
       htmltools::p(class = "g3-muted g3-small",
@@ -227,6 +242,10 @@
 
     # ---- delete / restore
     shiny::observeEvent(input$delete_sel, {
+      if (is.null(db())) {
+        msg(list(type = "error", text = no_db_text(lang())))
+        return()
+      }
       ids <- selected()
       if (!length(ids)) {
         msg(list(type = "error", text = .g3_t("db.select_first", lang())))
@@ -251,6 +270,10 @@
       bump_refresh()
     })
     shiny::observeEvent(input$restore_sel, {
+      if (is.null(db())) {
+        msg(list(type = "error", text = no_db_text(lang())))
+        return()
+      }
       ids <- selected()
       if (!length(ids)) {
         msg(list(type = "error", text = .g3_t("db.select_first", lang())))
@@ -272,7 +295,10 @@
     # ---- import (background process with its own handle)
     shiny::observeEvent(input$import_files, {
       d <- db()
-      if (is.null(d)) return()
+      if (is.null(d)) {
+        msg(list(type = "error", text = no_db_text(lang())))
+        return()
+      }
       f <- input$import_files
       dir <- file.path(app$storage()$root, "imports", format(Sys.time(), "%Y%m%d-%H%M%OS3"))
       dir.create(dir, recursive = TRUE, showWarnings = FALSE)
@@ -283,6 +309,7 @@
     })
     output$import_report <- shiny::renderUI({
       import_bg$tick()
+      if (is.null(db())) return(no_db_note(lang()))
       .g3_db_import_report(import_bg$state, ns, lang())
     })
     shiny::observe({
@@ -306,7 +333,10 @@
     shiny::observeEvent(input$export_sel, {
       d <- db()
       ids <- selected()
-      if (is.null(d)) return()
+      if (is.null(d)) {
+        msg(list(type = "error", text = no_db_text(lang())))
+        return()
+      }
       if (!length(ids)) {
         msg(list(type = "error", text = .g3_t("db.select_first", lang())))
         return()
@@ -318,6 +348,7 @@
     })
     output$export_report <- shiny::renderUI({
       export_bg$tick()
+      if (is.null(db())) return(no_db_note(lang()))
       .g3_db_export_report(export_bg$state, ns, lang())
     })
     shiny::observeEvent(input$export_cancel, export_bg$cancel())
@@ -330,7 +361,10 @@
     # ---- backup
     shiny::observeEvent(input$backup, {
       d <- db()
-      if (is.null(d)) return()
+      if (is.null(d)) {
+        backup_res(simpleError(no_db_text(lang())))
+        return()
+      }
       dir <- file.path(app$storage()$root, "backups")
       dir.create(dir, recursive = TRUE, showWarnings = FALSE)
       path <- file.path(dir, paste0("games-", format(Sys.time(), "%Y%m%d-%H%M%S"), ".sqlite"))
@@ -339,6 +373,7 @@
     output$backup_report <- shiny::renderUI({
       b <- backup_res()
       l <- lang()
+      if (is.null(db())) return(no_db_note(l))
       if (is.null(b)) return(NULL)
       if (inherits(b, "error")) return(htmltools::p(class = "g3-error", role = "alert", conditionMessage(b)))
       htmltools::tagList(
@@ -461,6 +496,9 @@
     ))
   }
   if (identical(st$status, "cancelled")) return(htmltools::p(role = "status", t("db.import_cancelled")))
+  if (identical(st$status, "timed_out")) {
+    return(htmltools::p(class = "g3-error", role = "alert", t("db.import_timed_out", s = st$wall_seconds)))
+  }
   if (!is.null(st$error)) return(htmltools::p(class = "g3-error", role = "alert", st$error))
   r <- st$result
   if (!is.data.frame(r)) return(NULL)
@@ -538,6 +576,9 @@
     ))
   }
   if (identical(st$status, "cancelled")) return(htmltools::p(role = "status", t("db.export_cancelled")))
+  if (identical(st$status, "timed_out")) {
+    return(htmltools::p(class = "g3-error", role = "alert", t("db.export_timed_out", s = st$wall_seconds)))
+  }
   if (!is.null(st$error)) return(htmltools::p(class = "g3-error", role = "alert", st$error))
   m <- st$result
   if (is.null(m)) return(NULL)
