@@ -1,0 +1,107 @@
+---
+title: "Getting started"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+gambitR3D is multilevel chess in R: three fixed 4×4 boards and four movable
+2×2 platforms, 64 physical squares that keep their identity when platforms
+move. The package plays, records, analyses and teaches the game, and can train
+a small transformer opponent. Everything runs locally; nothing needs a network
+connection, an account or Python unless you choose to train a model.
+
+The rules are an experimental project convention (`experimental-v0.1`), not an
+official rulebook. `vignette("rules", package = "gambitR3D")` explains them.
+
+## The app
+
+```{r, eval = FALSE}
+# Opens the local app in your browser, bound to 127.0.0.1 only.
+gambitR3D::g3_run_app()
+```
+
+Play hotseat or against the computer, switch between the 2D boards and the 3D
+scene, show the Neutral board highest or lowest, then save, analyse and review
+the game. `vignette("app", package = "gambitR3D")` is the tour.
+
+## A game in R
+
+A game holds its initial state, the current state and an event log. The rules
+functions work on the state.
+
+```{r}
+game <- gambitR3D::g3_new_game(players = list(white = "Ada", black = "Computer"))
+acts <- gambitR3D::g3_legal_actions(game$state)
+nrow(acts)
+head(acts[, c("action_id", "label")])
+```
+
+Every action has a stable id. Squares are named `board:u:v`; the label adds
+the board and the projected coordinate, so `W:b3` and `N:b3` are never
+confused even though they share a coordinate.
+
+```{r}
+game <- gambitR3D::g3_game_apply(game, "m:W:1:1-N:1:1")
+reply <- gambitR3D::g3_choose_action(game$state, agent = "search",
+                                     budget = list(nodes = 20000L))
+reply$label
+reply$status
+game <- gambitR3D::g3_game_apply(game, reply$action_id)
+gambitR3D::g3_game_moves(game)[, c("ply", "actor", "notation")]
+```
+
+The search reports how deep it completed, how many positions it visited and
+its score in heuristic units from the side to act's point of view. These are
+not centipawns: piece values for this variant are unknown.
+
+A whole game against the computer:
+
+```{r}
+play <- gambitR3D::g3_new_game()
+while (!gambitR3D::g3_is_terminal(play$state) && play$state$ply < 30L) {
+  agent <- if (play$state$side == "white") "search" else "greedy"
+  d <- gambitR3D::g3_choose_action(play$state, agent = agent, budget = list(nodes = 5000L))
+  play <- gambitR3D::g3_game_apply(play, d$action_id)
+}
+if (!gambitR3D::g3_is_terminal(play$state)) {
+  # A ply cap is a truncation, never a draw.
+  play <- gambitR3D::g3_game_event(play, "truncated", reason = "vignette ply cap")
+}
+play$metadata[c("result", "termination")]
+```
+
+## Saving and loading
+
+Games are saved in the native JSON format. Every action is replayed through
+the rules on loading, and any checksum mismatch is rejected.
+
+```{r}
+path <- tempfile(fileext = ".g3.json")
+gambitR3D::g3_write_game(play, path)
+back <- gambitR3D::g3_read_game(path)
+identical(gambitR3D::g3_game_hash(back), gambitR3D::g3_game_hash(play))
+```
+
+FEN and PGN cannot describe platforms or overlapping squares, so they are
+neither read nor written.
+
+## Where to go next
+
+| Guide | Topic |
+|---|---|
+| `vignette("rules")` | the experimental rules and every proposed decision |
+| `vignette("app")` | the app, the 2D and 3D views, display versus logic |
+| `vignette("database")` | a local game database: import, query, export, backup |
+| `vignette("analysis")` | position, game and collection analysis, plots and reports |
+| `vignette("coaching")` | reviews, hints, exercises and the learner profile |
+| `vignette("models")` | model registry and setting up the optional training environment |
+| `vignette("training")` | a bounded training run, step by step |
+| `vignette("experiments")` | comparing agents fairly |
+| `vignette("extending")` | architecture and extension points |

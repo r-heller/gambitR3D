@@ -1,0 +1,129 @@
+---
+title: "Analysing positions, games and collections"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Analysing positions, games and collections}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 7, fig.height = 3.6, dpi = 96)
+has_plots <- requireNamespace("ggplot2", quietly = TRUE) && requireNamespace("viridisLite", quietly = TRUE)
+```
+
+Analysis returns data first: tables with stable identifiers, documented units
+and explicit perspectives. Plots and reports are built from those tables, so
+every figure can be checked against its numbers. No model or Python is needed;
+model evaluations are optional and labelled when used.
+
+## A position
+
+`g3_analyse_position()` searches every legal action with a full window, so the
+alternatives' scores are exact for the completed depth and directly
+comparable. Scores are heuristic units from the side to act's point of view.
+
+```{r}
+st <- gambitR3D::g3_new_game()$state
+an <- gambitR3D::g3_analyse_position(st, budget = list(nodes = 60000L, depth = 2L))
+an
+```
+
+## A game
+
+```{r}
+game <- gambitR3D::g3_new_game()
+for (i in 1:24) {
+  if (gambitR3D::g3_is_terminal(game$state)) break
+  agent <- if (game$state$side == "white") "search" else "greedy"
+  d <- gambitR3D::g3_choose_action(game$state, agent, budget = list(nodes = 4000L))
+  game <- gambitR3D::g3_game_apply(game, d$action_id)
+}
+res <- gambitR3D::g3_analyse_game(game, budget = list(nodes = 2000L))
+res
+```
+
+Each table has a definition in the feature dictionary, with unit, denominator
+and missing-value policy:
+
+```{r}
+dict <- gambitR3D::g3_feature_dictionary()
+head(dict[dict$table == "positions", c("name", "unit", "denominator")])
+```
+
+Mobility counts actions and distinct destinations separately (a promotion or
+a platform's two orientations inflate the first). Attack maps come from the
+engine's threat semantics, not from legal moves. Tactical labels carry their
+claim strength: exact (check, capture, mate, pins tested by removing the
+piece), bounded search (a forced line within the budget) or heuristic (forks,
+hanging pieces, consequential platform actions, each with its definition).
+
+```{r}
+head(res$moves[, c("ply", "actor", "action_type", "capture", "check")], 8)
+table(res$tactics$label, res$tactics$claim_strength)
+```
+
+Move loss compares the played action with the best alternative under the same
+evaluator and budget. It is stored raw, including negative values caused by
+finite search; a clipped display column is labelled as such.
+
+## Plots
+
+```{r trajectory, eval = has_plots, fig.alt = "Expected-score trajectory of the game from White's side"}
+gambitR3D::g3_plot_game(res, metric = "expected_score", perspective = "white")
+```
+
+The expected score here is a fixed logistic mapping of heuristic units,
+labelled as uncalibrated: it is a readable scale, not a probability.
+
+Heatmaps keep the seven boards apart: overlapping projected coordinates are
+different squares.
+
+```{r heatmap, eval = has_plots, fig.height = 4.5, fig.alt = "Occupancy heatmap per physical square, one panel per board"}
+gambitR3D::g3_plot_board_heatmap(res, metric = "occupancy", coordinate_space = "board_local")
+```
+
+## Comparing agents
+
+`g3_compare_agents()` plays paired games from the same starting positions with
+the agents' colours swapped, under equal budgets. Games that hit the ply cap
+are counted as truncated, never as draws, and the score is reported both for
+completed games and as bounds over all scheduled games.
+
+```{r}
+cmp <- gambitR3D::g3_compare_agents(
+  c(search = "search", random = "random"),
+  budget = list(nodes = 1500L), seeds = 1L, pairs = 1L, max_plies = 40L
+)
+cmp$games[, c("white_agent", "black_agent", "status", "agent1_score")]
+cmp$summary[, c("scheduled", "completed", "truncated", "completed_score",
+                "scheduled_lower_bound", "scheduled_upper_bound")]
+```
+
+With one starting position this is descriptive. `vignette("experiments")`
+explains the design for real comparisons.
+
+## A collection
+
+`g3_analyse_database()` takes a database, a database path, game files or a list
+of games. It works in chunks, can be cancelled and resumed from its output
+directory, and records failures per game.
+
+```{r}
+short <- gambitR3D::g3_game_event(
+  gambitR3D::g3_game_apply(gambitR3D::g3_new_game(), "m:W:0:1-W:0:2"), "resign"
+)
+coll <- gambitR3D::g3_analyse_database(list(game, short), evaluator = "none")
+coll
+```
+
+## Reports
+
+```{r}
+out <- gambitR3D::g3_export_analysis_report(res, file.path(tempdir(), "game-report.html"))
+out$files[, c("file", "bytes")]
+```
+
+The HTML report is a single file with embedded figures, escaped game text, the
+evaluator, budget, rules hash and score perspective. It opens without a network
+connection.

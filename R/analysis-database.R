@@ -366,9 +366,7 @@ print.g3_database_analysis <- function(x, ...) {
 
 #' @noRd
 .g3_an_write_csv <- function(df, path) {
-  con <- textConnection("txt", "w", local = TRUE)
-  utils::write.csv(df, con, row.names = FALSE, na = "")
-  close(con)
+  txt <- utils::capture.output(utils::write.csv(df, row.names = FALSE, na = ""))
   .g3_atomic_write(paste0(paste(txt, collapse = "\n"), "\n"), path)
 }
 

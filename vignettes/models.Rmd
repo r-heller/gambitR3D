@@ -1,0 +1,103 @@
+---
+title: "Models: registry, compatibility and setup"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Models: registry, compatibility and setup}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+# Use an empty registry so the output does not depend on this machine.
+old <- options(gambitR3D.registry_dir = file.path(tempdir(), "vignette-registry"))
+```
+
+The rules engine and the alpha-beta search need no model. A model is an
+optional opponent and analysis aid. This guide covers which models exist, what
+each can do, and how to set up the optional training environment.
+
+## What is available
+
+```{r}
+caps <- gambitR3D::g3_model_capabilities()
+unique(caps[, c("model_id", "kind", "model_status")])
+```
+
+- `builtin-search` is the alpha-beta search: always available.
+- `builtin-square-transformer` is the package's own architecture: 64
+  physical-square tokens, seven board tokens and one global token, with a
+  scorer over the legal actions supplied by the rules engine and a
+  win/draw/loss head. Until you train it, it is an untrained architecture and
+  cannot play.
+- Three published ordinary-chess models are listed for reference only. They
+  were trained on 8×8 chess with fixed move vocabularies; none of them can
+  represent platforms, overlapping squares or this game's actions. They are
+  marked "adaptation required", are never downloaded automatically and cannot
+  play. A declared licence on a model card is recorded as a declaration, not as
+  proof of rights.
+
+```{r}
+caps[caps$model_id == "builtin-square-transformer", c("task", "status", "reason")]
+```
+
+## Compatibility checks
+
+A model is used only after validation: matching rules hash, feature and action
+schemas, artifact hashes recomputed in R, complete provenance, the requested
+task, and a working runtime. A model that fails any check is refused with the
+reason.
+
+```{r}
+v <- gambitR3D::g3_validate_model("builtin-square-transformer", error = FALSE)
+v$valid
+v$checks[v$checks$status != "pass", c("check", "status", "detail")]
+```
+
+## The optional training environment
+
+Training and model play use a separate Python environment with a CPU build of
+PyTorch, created at a path you choose. It is never touched when the package is
+loaded, and installing the package downloads nothing.
+
+```{r, eval = FALSE}
+# Creates the environment with uv from the package's pinned lock (with
+# hashes): Python 3.12, CPU-only torch, numpy, safetensors. About 800 MB.
+env <- file.path(tools::R_user_dir("gambitR3D", "data"), "ml-env")
+report <- gambitR3D::g3_setup_ml(env)
+report
+```
+
+The report gives the Python and package versions, the device, and whether the
+worker's feature schema matches the R encoder's. It reports `blocked`, with the
+reason, when `uv` is missing or no lock exists for the platform; it never
+installs unpinned packages. The lock is currently resolved for Linux x86_64.
+
+The worker is a separate process that exchanges JSON lines with R. It computes
+tensors only: it never sees the rules and never returns a position. R checks
+every reply (request ids, hashes, sizes, finiteness, the digest of the
+candidate actions) and maps the scores back to legal action ids.
+
+## Using a trained model
+
+After `vignette("training")`, a validated checkpoint plays like any other
+agent:
+
+```{r, eval = FALSE}
+st <- gambitR3D::g3_new_game()$state
+d <- gambitR3D::g3_choose_action(st, agent = "model:<model id>",
+                                 budget = list(mode = "mcts", simulations = 32L))
+d$label
+pred <- gambitR3D::g3_predict_actions("model:<model id>", st)
+head(pred$actions[order(pred$actions$rank), c("label", "probability")])
+pred$wdl
+```
+
+Model values are from the side to act: win, draw, loss probabilities, value
+`p(win) - p(loss)` and expected score `p(win) + 0.5 p(draw)`. They are model
+estimates, uncalibrated unless a calibration study says otherwise. A short
+training run tests the pipeline; it does not make a strong opponent.
+
+```{r, include = FALSE}
+options(old)
+```

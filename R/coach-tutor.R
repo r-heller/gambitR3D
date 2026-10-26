@@ -116,9 +116,11 @@ g3_tutor_context <- function(x, exercise = NULL, state = NULL) {
 #' h <- gambitR3D::g3_exercise_hint(ex, 4L)
 #' ctx <- gambitR3D::g3_tutor_context(h, exercise = ex)
 #' # A legal move the engine did not verify is rejected.
-#' bad <- base::list(text = "Play the queen to B:b6.", evidence_refs = "hint", actions = "m:B:0:0-B:0:1")
+#' bad <- base::list(text = "Play the queen to B:b6.", evidence_refs = "hint",
+#'                   actions = "m:B:0:0-B:0:1")
 #' gambitR3D::g3_validate_tutor_output(bad, ctx)$problems
-#' good <- base::list(text = "The queen mates on B:e5.", evidence_refs = "hint", actions = "m:B:0:0-B:3:0")
+#' good <- base::list(text = "The queen mates on B:e5.", evidence_refs = "hint",
+#'                    actions = "m:B:0:0-B:3:0")
 #' gambitR3D::g3_validate_tutor_output(good, ctx)$valid
 #' @export
 g3_validate_tutor_output <- function(proposal, context) {

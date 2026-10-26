@@ -1,0 +1,98 @@
+---
+title: "Comparing agents fairly"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Comparing agents fairly}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 7, fig.height = 3.6, dpi = 96)
+has_plots <- requireNamespace("ggplot2", quietly = TRUE) && requireNamespace("viridisLite", quietly = TRUE)
+```
+
+Is a deeper search worth its time? Does a trained model beat the search at the
+same latency? Questions like these need controlled comparisons. This guide
+shows the design `g3_compare_agents()` follows and how to read its output.
+
+## Design
+
+- **Paired starting positions.** Every starting position is played twice
+  from the same position, with the agents' colours swapped. This is a swap of
+  roles, not a mirrored board: the asymmetric king and queen platforms and
+  castling rules make board mirroring invalid unless proven otherwise.
+- **Equal budgets.** Both agents get the same node, time or simulation
+  budget per decision. Equal nodes do not mean equal compute for a neural agent
+  and a search, so latency is always reported too.
+- **Every scheduled game counts.** Completed games give wins, draws and losses.
+  Games stopped at the ply cap are `truncated`, never draws; failed games stay
+  in the denominator.
+- **Uncertainty at the right level.** Games from one starting position are not
+  independent observations; the bootstrap resamples whole starting positions
+  (with their seed pairs).
+
+## A small run
+
+```{r}
+starts <- list(start = gambitR3D::g3_new_game()$state)
+# A second start: the position after a quiet opening move by each side.
+s2 <- gambitR3D::g3_apply_action(starts$start, "m:W:1:1-W:1:2")$state
+starts$c3 <- gambitR3D::g3_apply_action(s2, "m:B:1:2-B:1:1")$state
+
+cmp <- gambitR3D::g3_compare_agents(
+  c(deep = "search", shallow = "greedy"), positions = starts,
+  budget = list(nodes = 4000L), seeds = 1:2, pairs = 1L, max_plies = 50L,
+  bootstrap = list(replicates = 500L, seed = 1L)
+)
+cmp$summary[, c("scheduled", "completed", "truncated", "wins", "draws", "losses",
+                "completed_score", "scheduled_lower_bound", "scheduled_upper_bound")]
+```
+
+`completed_score` is `(wins + 0.5 draws) / completed`. It is conditional on
+completion, so the bounds put every truncated or failed game first as a loss
+and then as a win for the first agent; a wide gap means truncation could change
+the conclusion.
+
+```{r}
+cmp$uncertainty[c("method", "unit", "n_blocks", "replicates", "seed")]
+cmp$uncertainty$intervals
+cmp$costs
+```
+
+```{r comparison-plot, eval = has_plots, fig.alt = "Per-position scores of the two agents with interval"}
+gambitR3D::g3_plot_comparison(cmp, metric = "score")
+```
+
+With two starting positions this is a demonstration, not evidence. A study
+fixes its question, positions, seeds, budgets and analysis before the final
+run, keeps the positions used for tuning apart from those used for reporting,
+and reports negative results too.
+
+## Ratings
+
+The package does not print Elo. A rating fitted from a handful of agents on this
+variant has no relation to FIDE or online ratings, and at a score of 0 or 1 its
+point estimate is infinite. Expected score with an interval is the honest
+summary for small studies.
+
+## Splitting data for models
+
+For model training and evaluation, `g3_split_games()` assigns whole games (or
+whole groups, such as a player or a tournament) to partitions and reports
+positions that occur in more than one partition, so an evaluation is not
+quietly done on training positions.
+
+```{r}
+games <- lapply(1:4, function(i) {
+  g <- gambitR3D::g3_new_game()
+  for (k in 1:6) {
+    d <- gambitR3D::g3_choose_action(g$state, "random", seed = 10L * i + k)
+    g <- gambitR3D::g3_game_apply(g, d$action_id)
+  }
+  g
+})
+sp <- gambitR3D::g3_split_games(games, proportions = c(train = 0.5, test = 0.5), seed = 1L)
+sp$assignments[, c("game_id", "partition")]
+sp$audit[, c("partition_a", "partition_b", "shared_keys", "shared_start_keys", "shared_play_keys")]
+```

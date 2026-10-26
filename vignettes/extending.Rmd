@@ -1,0 +1,143 @@
+---
+title: "Architecture and extension points"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Architecture and extension points}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+This guide is for developers. It describes how the parts fit together, the
+stable formats, and where new evaluators, model back ends and plots plug in.
+
+## One rules engine
+
+```
+                      rules profile (JSON, hashed)
+                                  |
+                rules engine: g3_legal_actions(), g3_apply_action()
+                 /        |          |           |            \
+          Shiny app    search    analysis    coaching    Python worker
+        (2D/3D views) (agents)  (features)  (exercises)  (tensors only)
+```
+
+Every client asks the same engine for legal actions and transitions. The
+browser only renders and sends intentions; the Python worker only computes
+tensors for states and candidate actions that R encoded. Neither can make a
+move legal.
+
+The engine has two interchangeable back ends: R code, which is the
+reference, and a compiled port in `src/engine.cpp` that runs the search about
+150 times faster. Tests compare them position by position: legal actions in
+the same order, the same repetition-key text and evaluation, and identical
+search results (scores, bounds, node counts, principal variations). Select
+the R reference with:
+
+```{r}
+st <- gambitR3D::g3_new_game()$state
+a <- withr::with_options(list(gambitR3D.engine = "r"),
+                         gambitR3D::g3_choose_action(st, budget = list(nodes = 300L)))
+b <- gambitR3D::g3_choose_action(st, budget = list(nodes = 300L))
+identical(a[c("action_id", "score", "nodes")], b[c("action_id", "score", "nodes")])
+```
+
+## State, actions and keys
+
+A `g3_state` is a list with schema and rules identity, the seven boards (fixed
+main boards, platform docks and orientations), the pieces with stable ids and
+physical squares, side to act, castling rights and first-turn flags, an
+en-passant record, ply, the 100-ply counter, the repetition record and the
+outcome. Display preferences are never part of it.
+
+Three identities serve different purposes:
+
+| Function | What it identifies |
+|---|---|
+| `g3_position_key()` | the position for repetition: occupancy by type and colour, docks, rights, a usable en-passant right; no ids, ply or counters |
+| `g3_state_hash()` | the complete state, including history and counters; the revision token for `g3_apply_action(expected_state_hash = )` |
+| `g3_game_hash()` | a game's content: initial state and ordered events, including session events |
+
+Action ids are readable strings scoped to the action schema `g3-action/1` and
+the rules hash: `m:<from>-<to>[=X]`, `t:<platform>><dock>@<0|180>[=X]`,
+`c:<colour>:<side>`.
+
+## Stable formats
+
+| Format | Where | Notes |
+|---|---|---|
+| `gambitR3D-rules/1` | `inst/rules/*.json` | semantics hashed; rationale not hashed |
+| `gambitR3D-game` v1 | `g3_write_game()` | initial state, events, checksums, optional `ui` envelope |
+| `gambitR3D-position` v1 | `g3_write_position()` | one state, `history = recorded` or `edited` |
+| JSONL collection | `g3_export_games()` | one game envelope per line, plus a manifest |
+| `g3-features/1` | `inst/schemas/features-v1.json` | model encoder schema, hashed |
+| worker protocol 1.0 | `inst/schemas/worker-protocol-v1.json` | JSON lines over pipes |
+
+Migration policy: a reader accepts every older format version through explicit,
+tested migration functions and refuses newer versions with a message to update
+the package. A change of rules is a new profile with a new hash, never a
+migration: a game recorded under one rules hash is replayed only under that
+hash.
+
+## A new evaluator
+
+Search agents, the greedy and random baselines and model agents all answer
+`g3_choose_action()`. An evaluator for analysis only needs to return scores for
+positions; the analysis layer records its identity, budget and score scale with
+every value. A minimal custom agent built on the public API:
+
+```{r}
+capture_first <- function(state) {
+  acts <- gambitR3D::g3_legal_actions(state)
+  caps <- acts[!is.na(acts$capture_id), ]
+  if (nrow(caps)) caps$action_id[1] else acts$action_id[1]
+}
+g <- gambitR3D::g3_new_game()
+for (i in 1:6) g <- gambitR3D::g3_game_apply(g, capture_first(g$state))
+g$state$ply
+```
+
+To compare such an agent fairly, play it through the same loop as
+`g3_compare_agents()` does: paired starts, swapped colours, equal budgets and
+truncations kept apart from results.
+
+## A new model back end
+
+A model back end supplies scores for the candidate actions of encoded states.
+The contract is in `inst/schemas/worker-protocol-v1.json`: a handshake
+reporting versions and the feature-schema hash, then `infer_batch` requests
+carrying states, candidate features and a digest of the candidate ids, answered
+with one logit per candidate and win/draw/loss logits. R refuses any reply whose
+digest, shape or values do not match. A back end that only estimates values
+(no policy) is registered as value-only and is offered only for analysis.
+
+## A new plot
+
+Plots take an analysis result and return a `ggplot`, with the data used kept
+in the object so it can be checked:
+
+```{r, eval = requireNamespace("ggplot2", quietly = TRUE)}
+game <- gambitR3D::g3_new_game()
+for (i in 1:8) {
+  d <- gambitR3D::g3_choose_action(game$state, "greedy")
+  game <- gambitR3D::g3_game_apply(game, d$action_id)
+}
+res <- gambitR3D::g3_analyse_game(game, evaluator = "none")
+pos <- res$positions
+long <- rbind(
+  data.frame(ply = pos$ply, colour = "White", actions = pos$white_actions),
+  data.frame(ply = pos$ply, colour = "Black", actions = pos$black_actions)
+)
+p <- ggplot2::ggplot(long, ggplot2::aes(ply, actions, colour = colour, shape = colour)) +
+  ggplot2::geom_line() +
+  ggplot2::geom_point() +
+  ggplot2::labs(y = "Actions available (count, not distinct destinations)", colour = NULL, shape = NULL)
+head(p$data)
+```
+
+Follow the house rules: label the unit and the perspective, keep the seven
+boards apart unless an aggregation is stated, show missing values as gaps, and
+use shapes or labels as well as colour.

@@ -1,0 +1,120 @@
+---
+title: "Coaching and practice"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Coaching and practice}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+The coach is for people practising, not for training a model. It works
+offline, without a language model, and says nothing the rules engine or a
+search has not established. Every statement carries its claim type:
+
+| Claim type | Meaning |
+|---|---|
+| `legal_fact` | follows from the rules alone (a capture, a check, a promotion) |
+| `searched` | found by a bounded search; the budget, depth and completeness are given |
+| `heuristic` | an assessment by a stated definition (a fork, a hanging piece) |
+| `learning_suggestion` | advice for practice, not a claim about the position |
+
+"Forces checkmate" appears only when every reply has been checked.
+
+## Explaining an action
+
+Squares are always named with their board, so overlapping coordinates are
+never confused.
+
+```{r}
+st <- gambitR3D::g3_new_game()$state
+ex <- gambitR3D::g3_explain_action(st, "m:W:0:0-N:1:0")
+ex
+```
+
+German text is available for every template:
+
+```{r}
+gambitR3D::g3_explain_action(st, "m:W:0:0-N:1:0", lang = "de")$text
+```
+
+## Reviewing a game
+
+The review compares each played action with the best analysed alternative
+under the same evaluator and budget, replays every line it shows through the
+engine, and marks the critical decisions.
+
+```{r}
+game <- gambitR3D::g3_new_game()
+for (i in 1:16) {
+  if (gambitR3D::g3_is_terminal(game$state)) break
+  agent <- if (game$state$side == "white") "random" else "search"
+  d <- gambitR3D::g3_choose_action(game$state, agent, budget = list(nodes = 3000L), seed = i)
+  game <- gambitR3D::g3_game_apply(game, d$action_id)
+}
+review <- gambitR3D::g3_coach_game(game, budget = list(nodes = 3000L))
+review
+```
+
+## Exercises from the game
+
+Exercises come from real analysed positions. An exercise is "validated" only
+when its criterion has been checked against every legal action under the saved
+rules hash; several answers may be accepted. An exercise that rests on a
+bounded search stays a candidate.
+
+```{r}
+exs <- gambitR3D::g3_create_exercises(review, max_n = 5L)
+exs$summary[, c("theme", "status", "n_legal", "n_solved", "n_acceptable")]
+if (length(exs$exercises)) cat(gambitR3D::g3_exercise_objective(exs$exercises[[1]]), "\n")
+```
+
+The package also ships a small catalogue of authored, engine-verified
+exercises:
+
+```{r}
+cat_ex <- gambitR3D::g3_exercise_catalogue()
+cat_ex$summary[, c("theme", "status", "n_solved")]
+```
+
+## Hints and attempts
+
+Hints come in four levels: the area or threat, the piece or platform, the
+destination, and finally the full action with a verified continuation. A level
+never reveals what a later level would.
+
+```{r}
+ex1 <- cat_ex$exercises[[1]]
+cat(gambitR3D::g3_exercise_objective(ex1), "\n")
+for (level in 1:2) cat(level, ":", gambitR3D::g3_exercise_hint(ex1, level)$text, "\n")
+legal <- gambitR3D::g3_legal_actions(ex1$start_state)$action_id
+attempt <- gambitR3D::g3_score_attempt(ex1, legal[1], hints_used = 2L)
+attempt$status
+cat(attempt$feedback, "\n")
+```
+
+An illegal input gets its own feedback, separate from a legal but weak move.
+
+## The learner profile
+
+Progress is kept in a local JSON file that you choose. It stores attempts, hint
+use and themes, and plans practice with a transparent spaced schedule: missed
+themes come back, mastered ones are mixed in, and every selection says why it
+was chosen. It makes no claims about ratings or personal traits.
+
+```{r}
+profile <- file.path(tempdir(), "learner.json")
+gambitR3D::g3_learner_record(profile, attempt)
+plan <- gambitR3D::g3_practice_plan(profile, cat_ex, daily_limit = 3L)
+plan[, c("theme", "reason")]
+gambitR3D::g3_learner_settings(profile)
+```
+
+Using games for practice and including them in a training dataset are separate
+settings; the second is off unless you switch it on. Nothing is uploaded: there
+is no upload function. `g3_learner_export()`, `g3_learner_delete()` and
+`g3_learner_reset()` (the last two need `confirm = TRUE`) give you control over
+the file.

@@ -1,0 +1,120 @@
+---
+title: "A local game database"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{A local game database}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+Games live in a local SQLite catalogue. It stores every event of every game,
+where each record came from, annotations, and analysis results. Each game is
+validated by replaying it through the rules engine before it is stored, and
+original files are never modified.
+
+## Open, save, load
+
+```{r}
+db_path <- tempfile(fileext = ".sqlite")
+db <- gambitR3D::g3_open_game_db(db_path)
+db
+```
+
+Play two short games and save them. A game that is still running can be
+saved again after further moves; the stored record grows in place.
+
+```{r}
+play <- function(seed, plies) {
+  g <- gambitR3D::g3_new_game(players = list(white = "search", black = "random"))
+  g$metadata$agents <- list(white = list(agent = "search"), black = list(agent = "random"))
+  for (i in seq_len(plies)) {
+    if (gambitR3D::g3_is_terminal(g$state)) break
+    agent <- if (g$state$side == "white") "search" else "random"
+    d <- gambitR3D::g3_choose_action(g$state, agent, budget = list(nodes = 3000L), seed = seed + i)
+    g <- gambitR3D::g3_game_apply(g, d$action_id)
+  }
+  g
+}
+g1 <- play(1L, 12L)
+g2 <- play(2L, 16L)
+s1 <- gambitR3D::g3_save_game(db, g1)
+s2 <- gambitR3D::g3_save_game(db, g2)
+gambitR3D::g3_query_games(db)[, c("game_id", "status", "white", "black", "plies")]
+```
+
+Loading replays the stored events, so the game comes back validated, together
+with whether it can be resumed.
+
+```{r}
+back <- gambitR3D::g3_load_game(db, s1$game_id)
+back$catalogue$status
+identical(gambitR3D::g3_game_hash(back), gambitR3D::g3_game_hash(g1))
+```
+
+## Query
+
+Filters are data, never code: field names come from a fixed list and values
+are bound as parameters.
+
+```{r}
+gambitR3D::g3_query_games(db, filters = list(min_plies = 14L, order_by = "plies"))[, c("game_id", "plies")]
+gambitR3D::g3_query_games(db, filters = list(player = "Robert'); DROP TABLE games; --"))
+```
+
+## Export and import
+
+Export writes the native JSONL format, a manifest with checksums and a
+readable move list. PGN and FEN are refused because they would lose the
+boards and platforms.
+
+```{r}
+out <- file.path(tempdir(), "collection.jsonl")
+manifest <- gambitR3D::g3_export_games(db, c(s1$game_id, s2$game_id), out)
+manifest$files[, c("file", "role", "records")]
+```
+
+Importing a collection gives one report row per record. Importing the same
+file twice adds nothing, and a broken record is quarantined with the first
+event that fails, while the valid records are still accepted.
+
+```{r}
+db2 <- gambitR3D::g3_open_game_db(tempfile(fileext = ".sqlite"))
+rep1 <- gambitR3D::g3_import_games(db2, out)
+rep1[, c("record", "status")]
+rep2 <- gambitR3D::g3_import_games(db2, out)
+rep2[, c("record", "status")]
+
+lines <- readLines(out)
+broken <- jsonlite::fromJSON(lines[1], simplifyVector = FALSE)
+broken$events[[3]]$action_id <- "m:W:0:0-B:3:3"
+bad <- file.path(tempdir(), "broken.jsonl")
+writeLines(c(as.character(jsonlite::toJSON(broken, auto_unbox = TRUE, null = "null", na = "null", digits = NA)), lines[2]), bad)
+rep3 <- gambitR3D::g3_import_games(db2, bad)
+rep3[, c("record", "status", "first_invalid_event")]
+```
+
+## Backup and integrity
+
+```{r}
+bak <- tempfile(fileext = ".sqlite")
+b <- gambitR3D::g3_backup_game_db(db, bak)
+file.exists(bak)
+chk <- gambitR3D::g3_check_game_db(db)
+chk$ok
+gambitR3D::g3_close_game_db(db)
+gambitR3D::g3_close_game_db(db2)
+```
+
+A backup uses SQLite's own consistent copy, not a file copy of a live
+database. A restore always goes to a new file and is fully replayed before it
+is used.
+
+## Read-only use
+
+`g3_open_game_db(path, read_only = TRUE)` never creates, migrates or changes a
+file, which makes it the right choice for analysis jobs running beside an app
+that is writing.
