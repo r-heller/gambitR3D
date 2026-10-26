@@ -156,7 +156,7 @@ test_that("undo counts follow the mode", {
 
 test_that("the storage service saves, lists and reads games and positions", {
   dir <- withr::local_tempdir()
-  st <- .g3_storage_service(dir)
+  st <- .g3_storage_service(dir, db_path = FALSE)
   expect_identical(st$backend, "file")
   expect_identical(nrow(st$list_games()), 0L)
   g <- g3_game_apply(g3_new_game(), "m:W:1:1-W:1:3")
@@ -184,12 +184,13 @@ test_that("the storage service saves, lists and reads games and positions", {
   junk <- file.path(dir, "junk.json")
   writeLines('{"format": "something-else"}', junk)
   expect_error(st$read(junk), class = "g3_invalid_state")
-  # A database path without the database API falls back to files, honestly.
-  if (!.g3_api_available("g3_save_game")) {
-    st2 <- .g3_storage_service(dir, db_path = file.path(dir, "x.sqlite"))
-    expect_identical(st2$backend, "file")
-    expect_match(st2$note, "not available")
-  }
+  # A catalogue that cannot be opened falls back to files and says why.
+  junk_db <- file.path(dir, "not-a-db.sqlite")
+  writeLines("this is not SQLite", junk_db)
+  st2 <- .g3_storage_service(dir, db_path = junk_db)
+  withr::defer(st2$close())
+  expect_identical(st2$backend, "file")
+  expect_match(st2$note, "could not be opened")
 })
 
 test_that("analysis branch states equal g3_replay_game() at every ply", {

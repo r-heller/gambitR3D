@@ -49,7 +49,10 @@
   txt <- if (is.na(txt)) key else unname(txt)
   vars <- list(...)
   for (nm in names(vars)) {
-    txt <- gsub(paste0("{", nm, "}"), as.character(vars[[nm]]), txt, fixed = TRUE)
+    # A missing value prints as empty text rather than failing the output.
+    val <- vars[[nm]]
+    val <- if (is.null(val) || !length(val)) "" else paste(ifelse(is.na(val), "NA", as.character(val)), collapse = ", ")
+    txt <- gsub(paste0("{", nm, "}"), val, txt, fixed = TRUE)
   }
   txt
 }

@@ -145,7 +145,13 @@
       shiny::showModal(.g3_new_game_modal(ns, lang(), store$game))
     })
     shiny::observeEvent(input$start_game, {
-      game <- .g3_build_new_game(input$mode, input$human_color, input$agent, input$budget, lang())
+      game <- tryCatch(.g3_build_new_game(input$mode, input$human_color, input$agent, input$budget, lang(),
+                                          model_mode = input$model_mode %||% "policy"), error = function(e) e)
+      if (inherits(game, "error")) {
+        shiny::removeModal()
+        app$notify(conditionMessage(game), "error")
+        return()
+      }
       shiny::removeModal()
       .g3_opponent_cancel(opp, "idle")
       ack <- dispatch(.g3_store_request(store, "replace", game = game))
@@ -335,26 +341,38 @@
 }
 
 #' @noRd
-.g3_build_new_game <- function(mode, human_color, agent, budget, lang = "en") {
+.g3_build_new_game <- function(mode, human_color, agent, budget, lang = "en", model_mode = "policy") {
   mode <- if (identical(mode, "computer")) "computer" else "hotseat"
   if (mode == "hotseat") {
     game <- g3_new_game(players = list(white = .g3_t("side.white", lang), black = .g3_t("side.black", lang)))
     game$metadata$mode <- "hotseat"
+    # Catalogue convention (database handoff): who played each side.
+    game$metadata$agents <- list(white = "human", black = "human")
     return(game)
   }
   human <- if (identical(human_color, "black")) "black" else "white"
   computer <- setdiff(.G3_COLORS, human)
-  agent <- if (isTRUE(agent %in% names(.G3_APP_AGENTS))) agent else "search"
+  is_model <- is.character(agent) && length(agent) == 1L && startsWith(agent, "model:")
+  if (!is_model) agent <- if (isTRUE(agent %in% names(.G3_APP_AGENTS))) agent else "search"
   nodes <- unname(.G3_APP_BUDGETS[if (isTRUE(budget %in% names(.G3_APP_BUDGETS))) budget else "standard"])
-  label <- .g3_agent_label(agent, nodes, "en")
+  model_mode <- if (identical(model_mode, "mcts")) "mcts" else "policy"
+  model <- if (is_model) .g3_model_resolve(agent) else NULL
+  label <- if (is_model) .g3_model_label(model, model_mode) else .g3_agent_label(agent, nodes, "en")
   players <- list()
   players[[human]] <- "Human"
   players[[computer]] <- label
   game <- g3_new_game(players = players[c("white", "black")])
   game$metadata$mode <- "computer"
+  agents <- list()
+  agents[[human]] <- "human"
+  agents[[computer]] <- list(agent = if (is_model) agent else agent,
+                             model_revision = if (is_model) model$manifest$weights_digest %||% NA_character_ else NA_character_)
+  game$metadata$agents <- agents[c("white", "black")]
   game$metadata$opponent <- list(
     agent = agent, color = computer, human = human, nodes = nodes, label = label,
-    engine = .G3_SEARCH_VERSION, evaluator = .G3_EVAL_VERSION,
+    mode = if (is_model) model_mode else NULL, simulations = if (is_model) 32L else NULL,
+    model_revision = if (is_model) model$manifest$weights_digest %||% NA_character_ else NULL,
+    engine = if (is_model) "model" else .G3_SEARCH_VERSION, evaluator = if (is_model) NULL else .G3_EVAL_VERSION,
     rules_version = game$state$rules_version, rules_hash = game$state$rules_hash,
     package_version = as.character(utils::packageVersion("gambitR3D"))
   )
@@ -363,8 +381,26 @@
 
 #' @noRd
 .g3_agent_label <- function(agent, nodes, lang = "en") {
+  if (startsWith(agent, "model:")) return(agent)
   base <- .g3_t(.G3_APP_AGENTS[[agent]], lang)
   if (identical(agent, "search")) paste0(base, ", ", .g3_t("agent.nodes", lang, n = nodes)) else base
+}
+
+#' @noRd
+.g3_model_label <- function(model, mode) {
+  paste0(model$manifest$display_name %||% model$model_id, " [", model$model_id, ", ", mode, "]")
+}
+
+# Trained checkpoints that validate for play, as select choices.
+#' @noRd
+.g3_playable_models <- function() {
+  cp <- tryCatch(g3_model_capabilities(), error = function(e) NULL)
+  if (is.null(cp)) return(character())
+  ok <- cp$kind == "trained_checkpoint" & cp$task == "play" & cp$status == "available"
+  ids <- unique(cp$model_id[ok])
+  if (!length(ids)) return(character())
+  names_ <- cp$display_name[match(ids, cp$model_id)]
+  stats::setNames(paste0("model:", ids), paste0(names_, " (", ids, ")"))
 }
 
 #' @noRd
@@ -384,8 +420,16 @@
                           choiceNames = list(t("side.white"), t("side.black")),
                           choiceValues = list("white", "black"), selected = o$human %||% "white", inline = TRUE),
       shiny::selectInput(ns("agent"), t("newgame.opponent"),
-                         choices = stats::setNames(names(.G3_APP_AGENTS), vapply(.G3_APP_AGENTS, t, "")),
+                         choices = c(stats::setNames(names(.G3_APP_AGENTS), vapply(.G3_APP_AGENTS, t, "")),
+                                     .g3_playable_models()),
                          selected = o$agent %||% "search"),
+      shiny::conditionalPanel(
+        "input.agent && input.agent.indexOf('model:') === 0", ns = ns,
+        shiny::radioButtons(ns("model_mode"), t("models.mode"),
+                            choiceNames = list(t("models.mode_policy"), t("models.mode_mcts")),
+                            choiceValues = list("policy", "mcts"), selected = o$mode %||% "policy", inline = TRUE),
+        htmltools::p(class = "g3-muted g3-small", t("newgame.model_note"))
+      ),
       shiny::selectInput(ns("budget"), t("newgame.budget"),
                          choices = stats::setNames(names(.G3_APP_BUDGETS),
                                                    vapply(names(.G3_APP_BUDGETS), function(b) {
@@ -461,7 +505,7 @@
   in_check <- is.null(res) && .g3_in_check(core, core$side, .g3_ctx(core, tabs), tabs)
   o <- .g3_opponent_settings(game)
   mode_txt <- if (is.null(o)) t("mode.hotseat") else
-    t("mode.vs", side = t(paste0("side.", o$human)), opponent = .g3_agent_label(o$agent, o$nodes, lang))
+    t("mode.vs", side = t(paste0("side.", o$human)), opponent = if (startsWith(o$agent, "model:")) o$label %||% o$agent else .g3_agent_label(o$agent, o$nodes, lang))
   htmltools::div(
     class = "g3-gamebar",
     htmltools::div(
@@ -474,7 +518,7 @@
         )
       } else {
         htmltools::tagList(
-          htmltools::span(class = "g3-badge g3-badge-result", htmltools::span(`aria-hidden` = "true", "■"), t("status.finished")),
+          htmltools::span(class = "g3-badge g3-badge-result", htmltools::span(`aria-hidden` = "true", "\u25A0"), t("status.finished")),
           htmltools::strong(res)
         )
       }

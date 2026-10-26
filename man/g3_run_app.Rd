@@ -12,9 +12,9 @@ g3_run_app(
 )
 }
 \arguments{
-\item{db_path}{Optional path to a gambitR3D SQLite game database. When it
-is given and this build provides the database API, games are saved
-there; otherwise games are saved as files.}
+\item{db_path}{Path of the SQLite game catalogue; \code{NULL} (default) uses
+\code{games.sqlite} in the storage folder, and \code{FALSE} saves native game
+files instead.}
 
 \item{host}{Address to listen on. The default \code{"127.0.0.1"} accepts
 connections from this computer only. Any other address makes the app
@@ -32,19 +32,25 @@ Invisibly, the value passed to \code{\link[shiny:stopApp]{shiny::stopApp()}} whe
 stops (normally \code{NULL}). Called for its side effect of running the app.
 }
 \description{
-Starts the local Shiny application: play hotseat or against the built-in
-search opponent on synchronised 2D and 3D boards, analyse a branch of the
-game, and inspect the rules profile. Games are autosaved after every
-committed action, as native game files under
-\code{tools::R_user_dir("gambitR3D", "data")/games} (or in the game database
-when \code{db_path} is given and the database API is available). All assets
-are bundled; the app makes no network requests.
+Starts the local Shiny application with seven sections: Play (hotseat,
+the built-in search, greedy and random baselines, or a registered model
+checkpoint, on synchronised 2D and 3D boards), Analyse (a separate
+branch, whole-game analysis with linked plot, move table, tactics,
+heatmap and report export), Database (the game catalogue: filters,
+detail, import, export, delete and restore, backup), Coach (post-game
+review and action explanations), Models (registry and validation),
+Training (practice exercises with hints, and bounded opponent training)
+and Settings. Every committed action is saved before it is shown: in the
+game catalogue (\code{db_path}, by default
+\code{tools::R_user_dir("gambitR3D", "data")/games.sqlite}), or as native game
+files when the catalogue cannot be used. Long work runs in background
+processes. All assets are bundled; the app makes no network requests.
 }
 \examples{
 \dontrun{
-# Opens a browser window; stop with Ctrl+C or Esc in the console.
+# Interactive: opens a browser window; stop with Ctrl+C or Esc.
 gambitR3D::g3_run_app()
-# Neutral board lowest and the game database (if available):
+# A separate catalogue file:
 gambitR3D::g3_run_app(db_path = base::file.path(base::tempdir(), "games.sqlite"))
 }
 }

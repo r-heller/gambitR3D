@@ -165,7 +165,7 @@
   where <- if (identical(r$backend, "db")) t("files.saved_db", path = r$path) else t("files.saved_file", path = r$path)
   htmltools::tagList(
     htmltools::p(class = "g3-ok g3-small", role = "status",
-                 htmltools::span(class = "g3-badge g3-badge-ok", htmltools::span(`aria-hidden` = "true", "✓"),
+                 htmltools::span(class = "g3-badge g3-badge-ok", htmltools::span(`aria-hidden` = "true", "\u2713"),
                                  t("files.saved_badge")),
                  " ", t("files.saved_at", time = r$time), " ", where),
     note

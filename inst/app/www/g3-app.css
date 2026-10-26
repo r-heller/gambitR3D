@@ -259,7 +259,7 @@ body {
 
 .g3-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .g3-table th, .g3-table td { padding: 6px 8px; border-bottom: 1px solid var(--g3-line); text-align: left; vertical-align: top; }
-.g3-table th { color: var(--g3-muted); font-weight: 700; }
+.g3-table th { color: var(--g3-muted); font-weight: 700; white-space: nowrap; }
 .g3-table th.g3-num, .g3-table td.g3-num { text-align: right; }
 
 /* ------------------------------------------------------------------ play */
@@ -532,6 +532,61 @@ body {
 }
 @container (max-width: 300px) {
   .g3-board { --g3-cell: 44px; }
+}
+
+
+/* ------------------------------------------------- integrated sections */
+
+.g3-db-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 400px); gap: 24px; align-items: start; }
+.g3-db-main, .g3-db-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.g3-filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 0 12px; }
+.g3-table-scroll { max-width: 100%; overflow-x: auto; max-height: 520px; overflow-y: auto; }
+.g3-table-scroll thead th { position: sticky; top: 0; background: var(--g3-surface); z-index: 1; }
+.g3-table td input[type="checkbox"] { width: 22px; height: 22px; margin: 11px; }
+.g3-linkbtn {
+  border: 0; background: none; padding: 0 4px; min-height: 44px; min-width: 44px;
+  color: var(--g3-ink); text-decoration: underline; text-underline-offset: 3px; font-weight: 600;
+  text-align: left; overflow-wrap: anywhere;
+}
+.g3-linkbtn:hover { text-decoration-thickness: 2px; }
+.g3-row-current, .g3-row-current td { background: var(--g3-surface-2); }
+.g3-row-current > td:first-child, li.g3-row-current { box-shadow: inset 4px 0 0 var(--g3-amber); }
+.g3-row-critical td:first-child { font-weight: 700; }
+.g3-subtitle { font-size: 0.95rem; font-weight: 700; margin: 12px 0 6px; }
+.g3-claims { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.g3-claims li { border-bottom: 1px solid var(--g3-line); padding-bottom: 6px; font-size: 14px; }
+.g3-claims .g3-chip { margin-left: 0; margin-right: 4px; }
+.g3-strength-exact, .g3-strength-proven { border-color: var(--g3-ink); border-width: 2px; }
+.g3-strength-heuristic, .g3-strength-suggestion { border-style: dashed; }
+.g3-chip-critical { border-color: var(--g3-ink); border-width: 2px; }
+.g3-chip-variation { border-left: 4px solid var(--g3-amber); }
+.g3-banner-preview { border-left-color: var(--g3-blue); }
+.g3-hints { padding-left: 1.4em; display: grid; gap: 6px; }
+.g3-plan { padding-left: 1.4em; }
+.g3-feedback { margin-top: 8px; }
+.g3-job { margin-top: 8px; }
+.g3-job .g3-badge { margin-right: 6px; }
+.g3-training .nav-pills { gap: 8px; margin-bottom: 12px; }
+.g3-training .nav-pills .nav-link {
+  min-height: 44px; border: 1px solid var(--g3-line); color: var(--g3-ink); font-weight: 600;
+}
+.g3-training .nav-pills .nav-link.active { background: var(--g3-accent); color: var(--g3-accent-ink); border-color: var(--g3-accent); }
+.shiny-plot-output { max-width: 100%; }
+.g3-cap-available { border-color: var(--g3-ok); color: var(--g3-ok); }
+.g3-table .g3-chip { white-space: nowrap; margin-left: 0; }
+
+/* Hint or previewed-line highlight: dashed frame (focus), hatching (area). */
+.g3-cell.is-hint { outline: 3px dashed var(--g3-keyline); outline-offset: -7px; }
+.g3-cell.is-hint::after {
+  content: ""; position: absolute; left: 3px; bottom: 3px; width: 12px; height: 12px;
+  background: var(--g3-blue); transform: rotate(45deg); box-shadow: 0 0 0 2px var(--g3-keyline);
+}
+.g3-cell.is-hint-area {
+  background-image: repeating-linear-gradient(45deg, transparent 0 7px, rgba(15, 26, 36, 0.22) 7px 9px);
+}
+
+@media (max-width: 1099.98px) {
+  .g3-db-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Reduced motion: no transitions or spinning. */

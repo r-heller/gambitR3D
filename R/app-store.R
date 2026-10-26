@@ -208,41 +208,45 @@
 #' Storage service for app games
 #'
 #' Keeps file input/output behind one small interface so UI modules never
-#' invent storage formats. Games are saved in the native format with
-#' `g3_write_game()` (atomic temporary write and rename) under
-#' `<root>/games/<game_id>.g3.json`. When `db_path` is given and the game
-#' database API (`g3_open_game_db()`, `g3_save_game()`) is present in this
-#' build, games are saved to the database instead.
+#' invent storage formats. By default games are saved in the game catalogue
+#' (`g3_save_game()`, one committed SQLite transaction per save) at
+#' `db_path`, or `<root>/games.sqlite` when `db_path` is `NULL`. With
+#' `db_path = FALSE`, or when the catalogue cannot be opened (the reason is
+#' kept in `note`), games are saved as native files with `g3_write_game()`
+#' (atomic temporary write and rename) under `<root>/games`.
 #'
 #' @param root Storage folder; default `tools::R_user_dir("gambitR3D",
 #'   "data")`.
-#' @param db_path Optional SQLite database path.
+#' @param db_path Catalogue path, `NULL` for the default, or `FALSE` for
+#'   files only.
 #' @return A list of functions and fields: `root`, `games_dir`, `backend`
-#'   (`"file"` or `"db"`), `note`, `save(game, ui = NULL)` (returns a
-#'   receipt `list(ok, backend, path, time, message)`), `list_games()`
-#'   (newest first; database games have paths `"db:<game_id>"`),
-#'   `read(path)` (a file path or a `"db:"` path) and `close()`.
+#'   (`"file"` or `"db"`), `db` (the open `g3_db` or `NULL`), `db_path`,
+#'   `note`, `save(game, ui = NULL)` (returns a receipt `list(ok, backend,
+#'   path, time, message, db_status, db_game_id)`), `list_games()` (newest
+#'   first; catalogue games have paths `"db:<game_id>"`), `read(path)` (a
+#'   file path or a `"db:"` path) and `close()`.
 #' @noRd
 .g3_storage_service <- function(root = NULL, db_path = NULL) {
   root <- normalizePath(root %||% tools::R_user_dir("gambitR3D", which = "data"), mustWork = FALSE)
   games_dir <- file.path(root, "games")
-  ns <- asNamespace("gambitR3D")
-  db_open <- get0("g3_open_game_db", envir = ns, inherits = FALSE)
-  db_save <- get0("g3_save_game", envir = ns, inherits = FALSE)
-  db_close <- get0("g3_close_game_db", envir = ns, inherits = FALSE)
   backend <- "file"
   note <- NA_character_
   db <- NULL
-  if (!is.null(db_path)) {
-    if (is.function(db_open) && is.function(db_save)) {
-      db <- tryCatch(db_open(db_path), error = function(e) {
-        note <<- paste0("The game database could not be opened (", conditionMessage(e), "); saving to files.")
+  use_db <- !isFALSE(db_path)
+  if (use_db) {
+    db_path <- normalizePath(path.expand(db_path %||% file.path(root, "games.sqlite")), mustWork = FALSE)
+    if (!requireNamespace("RSQLite", quietly = TRUE) || !requireNamespace("DBI", quietly = TRUE)) {
+      note <- "The game catalogue needs the 'DBI' and 'RSQLite' packages; games are saved as files."
+    } else {
+      if (!dir.exists(dirname(db_path))) dir.create(dirname(db_path), recursive = TRUE, showWarnings = FALSE)
+      db <- tryCatch(suppressWarnings(g3_open_game_db(db_path)), error = function(e) {
+        note <<- paste0("The game catalogue could not be opened (", conditionMessage(e), "); games are saved as files.")
         NULL
       })
       if (!is.null(db)) backend <- "db"
-    } else {
-      note <- "The game database API is not available in this build; games are saved as files."
     }
+  } else {
+    db_path <- NA_character_
   }
   save_file <- function(game, ui = NULL) {
     if (!dir.exists(games_dir) && !dir.create(games_dir, recursive = TRUE, showWarnings = FALSE)) {
@@ -250,14 +254,17 @@
     }
     path <- file.path(games_dir, paste0(game$metadata$game_id, ".g3.json"))
     g3_write_game(game, path, overwrite = TRUE, ui = ui)
-    list(ok = TRUE, backend = "file", path = path, time = .g3_now(), message = NA_character_)
+    list(ok = TRUE, backend = "file", path = path, time = .g3_now(), message = NA_character_,
+         db_status = NA_character_, db_game_id = NA_character_)
   }
   save <- function(game, ui = NULL) {
     if (backend == "db") {
-      # g3_save_game() returns only after its transaction has committed.
-      res <- db_save(db, game, source = "app")
+      # g3_save_game() returns only after its transaction has committed. A
+      # new finished game identical to a stored one is linked, not copied:
+      # then the catalogue's id differs from the live game's id.
+      res <- g3_save_game(db, game, source = "app")
       return(list(ok = TRUE, backend = "db", path = db_path, time = res$saved_at %||% .g3_now(),
-                  message = NA_character_, db_status = res$status))
+                  message = NA_character_, db_status = res$status, db_game_id = res$game_id))
     }
     save_file(game, ui)
   }
@@ -267,7 +274,7 @@
                black = character(), stringsAsFactors = FALSE)
   }
   list_db <- function() {
-    q <- get("g3_query_games", envir = ns)(db, filters = list(origin = "app"), limit = 50L)
+    q <- g3_query_games(db, filters = list(origin = "app"), limit = 50L)
     if (!nrow(q)) return(list_games_empty())
     data.frame(
       game_id = q$game_id, path = paste0("db:", q$game_id),
@@ -278,7 +285,7 @@
   }
   read <- function(path) {
     if (backend == "db" && startsWith(path, "db:")) {
-      return(get("g3_load_game", envir = ns)(db, substring(path, 4L)))
+      return(g3_load_game(db, substring(path, 4L)))
     }
     .g3_app_read_file(path)
   }
@@ -305,10 +312,10 @@
     out
   }
   close <- function() {
-    if (!is.null(db) && is.function(db_close)) try(db_close(db), silent = TRUE)
+    if (!is.null(db)) try(g3_close_game_db(db), silent = TRUE)
     invisible(TRUE)
   }
-  list(root = root, games_dir = games_dir, backend = backend, note = note,
+  list(root = root, games_dir = games_dir, backend = backend, db = db, db_path = db_path, note = note,
        save = save, list_games = list_games, read = read, close = close)
 }
 

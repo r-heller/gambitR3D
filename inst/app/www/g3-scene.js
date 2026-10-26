@@ -34,16 +34,17 @@ const PALETTES = {
   }
 };
 
-// Default viewpoints: a narrow field of view from far away keeps the
-// perspective mild. The player views look down at about 60 degrees, so the
-// back ranks of the board under a raised N stay visible.
+// Viewpoints are directions from the scene centre; the distance is fitted
+// to the canvas (see fitCamera) so that all seven boards are in view at any
+// size and in both Neutral height modes. The player views look down at 64
+// degrees, steep enough to see the back ranks of the board under a raised
+// N, while keeping a sense of the stacked levels.
 const VIEWS = {
-  white: { pos: [0, 20.8, 12.3] },
-  black: { pos: [0, 20.8, -12.3] },
-  top: { pos: [0, 25, 0.001] },
-  side: { pos: [23, 9.5, 0] }
+  white: { dir: [0, Math.sin(64 * Math.PI / 180), Math.cos(64 * Math.PI / 180)] },
+  black: { dir: [0, Math.sin(64 * Math.PI / 180), -Math.cos(64 * Math.PI / 180)] },
+  top: { dir: [0, 1, 0.0001] },
+  side: { dir: [0.92, 0.39, 0] }
 };
-const TARGET = [0, 1.0, 0];
 
 function ease(t) {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -89,7 +90,7 @@ export class Scene3D {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(30, 1, 0.1, 300);
     this.controls = new OrbitControls(this.camera, canvas);
-    this.controls.target.set(TARGET[0], TARGET[1], TARGET[2]);
+    this.controls.target.set(0, 1, 0);
     this.controls.minDistance = 5;
     this.controls.maxDistance = 60;
     this.controls.maxPolarAngle = Math.PI * 0.49;
@@ -150,6 +151,8 @@ export class Scene3D {
       castle: new THREE.RingGeometry(0.30, 0.40, 4, 1),
       lastFrame: new THREE.RingGeometry(0.44, 0.49, 4, 1),
       hover: new THREE.RingGeometry(0.455, 0.49, 4, 1),
+      hintOuter: new THREE.RingGeometry(0.30, 0.42, 4, 1),
+      hintInner: new THREE.RingGeometry(0.26, 0.30, 4, 1),
       ghost: new THREE.BoxGeometry(1.96, 0.05, 1.96)
     };
     const std = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.75, metalness: 0.0 });
@@ -316,7 +319,8 @@ export class Scene3D {
       oldPieces[pid] = v;
     });
     const heightChanged = this.state && this.state.geometry && p.geometry &&
-      this.state.geometry.neutral_height !== p.geometry.neutral_height;
+      (this.state.geometry.neutral_height !== p.geometry.neutral_height ||
+       this.state.geometry.exploded !== p.geometry.exploded);
     this.state = p;
     if ((heightChanged || !this.framed) && !this.userMoved) {
       this.setViewpoint(this.viewName || 'white', true);
@@ -552,6 +556,16 @@ export class Scene3D {
       add(m.check, [badge]);
     }
     if (this.hovered) add(this.hovered, [this.flatMesh(this.geo.hover, this.mat.hover, 0, 0, y + 0.001, Math.PI / 4)]);
+    // Hint or previewed-line highlight: a blue diamond frame with a dark
+    // keyline on focus squares, a thin dark frame on the area.
+    const hl = m.highlight;
+    if (hl) {
+      (hl.focus || []).forEach((id) => add(id, [
+        this.flatMesh(this.geo.hintOuter, this.mat.blue, 0, 0, y + 0.005),
+        this.flatMesh(this.geo.hintInner, this.mat.ink, 0, 0, y + 0.005)
+      ]));
+      (hl.area || []).forEach((id) => add(id, [this.flatMesh(this.geo.hover, this.mat.lastInk, 0, 0, y + 0.001, Math.PI / 4)]));
+    }
     // Platform preview: a translucent ghost at the destination dock.
     const a = this.preview;
     if (a && a.type === 'platform' && this.state) {
@@ -606,23 +620,76 @@ export class Scene3D {
     this.dirty = true;
   }
 
+  // Bounding corners of every board, including the height of the pieces.
+  sceneCorners() {
+    const out = [];
+    const boards = this.state ? this.state.boards : null;
+    if (!boards) {
+      [-4, 4].forEach((x) => [-7, 7].forEach((z) => [0, 4.5].forEach((y) => out.push(new THREE.Vector3(x, y, z)))));
+      return out;
+    }
+    boards.forEach((b) => {
+      [b.x_min - 0.3, b.x_max + 0.3].forEach((x) => [b.z_min - 0.3, b.z_max + 0.3].forEach((z) => {
+        out.push(new THREE.Vector3(x, b.y - 0.25, z));
+        out.push(new THREE.Vector3(x, b.y + 0.75, z));
+      }));
+    });
+    return out;
+  }
+
+  // Place the camera along the viewpoint direction at the distance where
+  // the scene's bounding corners fill about 90% of the canvas.
+  fitCamera(dirArr) {
+    const corners = this.sceneCorners();
+    const box = new THREE.Box3().setFromPoints(corners);
+    const centre = box.getCenter(new THREE.Vector3());
+    const dir = new THREE.Vector3(dirArr[0], dirArr[1], dirArr[2]).normalize();
+    let d = 30;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < 8; i++) {
+      this.camera.position.copy(centre).addScaledVector(dir, d);
+      this.camera.lookAt(centre);
+      this.camera.updateMatrixWorld();
+      this.camera.updateProjectionMatrix();
+      let m = 0;
+      corners.forEach((c) => {
+        v.copy(c).project(this.camera);
+        m = Math.max(m, Math.abs(v.x), Math.abs(v.y));
+      });
+      if (!isFinite(m) || m <= 0) break;
+      d = Math.max(4, d * m / 0.9);
+    }
+    this.camera.position.copy(centre).addScaledVector(dir, d);
+    this.controls.target.copy(centre);
+    this.camera.lookAt(centre);
+  }
+
   setViewpoint(name, instant) {
     const v = VIEWS[name] || VIEWS.white;
-    const aspect = this.camera.aspect || 1;
-    // Only a narrow portrait canvas needs a longer distance to fit the width.
-    const k = Math.max(1, 0.7 / aspect);
-    // Aim at the middle of the stack: higher when the outer boards are up.
-    const lowest = this.state && this.state.geometry && this.state.geometry.neutral_height === 'lowest';
-    const ty = lowest ? 2.3 : TARGET[1];
-    const pos = new THREE.Vector3(v.pos[0] * k, ty - TARGET[1] + v.pos[1] * k, v.pos[2] * k);
-    this.camera.position.copy(pos);
-    this.controls.target.set(TARGET[0], ty, TARGET[2]);
-    this.userMoved = false;
-    this.camera.lookAt(this.controls.target);
+    this.fitCamera(v.dir);
     this.controls.update();
     this.viewName = name;
+    this.userMoved = false;
     void instant;
     this.dirty = true;
+  }
+
+  // Share of each board's tile-edge corners inside the canvas (for checks).
+  boardsInView() {
+    const out = {};
+    if (!this.state) return out;
+    const v = new THREE.Vector3();
+    this.camera.updateMatrixWorld();
+    this.state.boards.forEach((b) => {
+      const pts = [[b.x_min, b.z_min], [b.x_min, b.z_max], [b.x_max, b.z_min], [b.x_max, b.z_max]];
+      let inside = 0;
+      pts.forEach((p) => {
+        v.set(p[0], b.y, p[1]).project(this.camera);
+        if (Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1) inside += 1;
+      });
+      out[b.id] = inside / pts.length;
+    });
+    return out;
   }
 
   resetCamera() {
@@ -650,7 +717,7 @@ export class Scene3D {
     const before = this.camera.aspect;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    if (Math.abs(before - this.camera.aspect) > 0.05 && this.viewName) this.setViewpoint(this.viewName, true);
+    if (Math.abs(before - this.camera.aspect) > 0.05 && this.viewName && !this.userMoved) this.setViewpoint(this.viewName, true);
     this.dirty = true;
   }
 
@@ -760,7 +827,7 @@ export class Scene3D {
     });
     return {
       ready: !this.disposed && !this.lost, active: this.active, animating: this.tweens.length > 0,
-      boards: boards, pickables: this.pickables.length, textures: this.textures.size,
+      boards: boards, pickables: this.pickables.length, textures: this.textures.size, in_view: this.boardsInView(),
       webgl2: this.renderer.capabilities.isWebGL2, camera: this.viewName,
       renderer: this.renderer.info ? { geometries: this.renderer.info.memory.geometries, textures: this.renderer.info.memory.textures } : null
     };

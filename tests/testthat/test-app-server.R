@@ -36,7 +36,9 @@ test_that("board requests commit once per request id; stale requests change noth
     session$setInputs(`play-board-request` = r1)
     expect_identical(app$live$revision, 1L)
     key1 <- g3_position_key(app$live$game$state)
-    expect_true(file.exists(file.path(dir, "games", paste0(app$live$game$metadata$game_id, ".g3.json"))))
+    q <- g3_query_games(app$storage()$db)
+    expect_identical(q$game_id, app$live$game$metadata$game_id)
+    expect_identical(q$plies, 1L)
     # The browser re-sends the same request id (for example after a hiccup).
     r1$sent_at <- 99
     session$setInputs(`play-board-request` = r1)
@@ -124,8 +126,8 @@ test_that("presentation changes and section switches keep the game exactly", {
     expect_identical(g3_position_key(app$live$game$state), key)
     expect_identical(g3_legal_actions(app$live$game$state)$action_id, ids)
     # Section outputs render in the chosen language without errors.
-    expect_match(paste(unlist(output$`models-body`), collapse = ""), "Eingebaute Gegner")
-    expect_match(paste(unlist(output$`database-body`), collapse = ""), "Noch nicht verbunden")
+    expect_match(paste(unlist(output$`models-list`), collapse = ""), "builtin-search")
+    expect_match(paste(unlist(output$`database-status`), collapse = ""), "Katalog")
   })
 })
 
@@ -139,7 +141,10 @@ test_that("save, load and resume round-trip a game; bad files are refused", {
       session$setInputs(`play-board-request` = board_req(app$live, a))
     }
     expect_identical(app$live$revision, 3L)
-    saved_path <<- app$live$receipt$path
+    # Autosaved into the game catalogue; also written as a file for upload.
+    expect_identical(app$live$receipt$backend, "db")
+    saved_path <<- file.path(dir, "saved.g3.json")
+    g3_write_game(app$live$game, saved_path)
     saved_hash <<- g3_game_hash(app$live$game)
     expect_match(paste(unlist(output$`play-files-status`), collapse = ""), "Saved")
   })

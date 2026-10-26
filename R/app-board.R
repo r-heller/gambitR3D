@@ -106,7 +106,7 @@
 # The full JSON-ready message for one widget.
 #' @noRd
 .g3_board_payload <- function(state, token, prefs, last = NULL, interactive = TRUE,
-                              kind = "live", note = NULL, announce = NULL, lang = "en") {
+                              kind = "live", note = NULL, announce = NULL, lang = "en", highlight = NULL) {
   tabs <- .g3_tables()
   nh <- prefs$neutral_height %||% "highest"
   ex <- isTRUE(prefs$exploded)
@@ -193,8 +193,22 @@
     docks = docks,
     squares = squares,
     actions = actions,
-    last = last
+    last = last,
+    # Extra marks (hints, previewed lines): `kind` and physical square ids;
+    # `boards` marks every square of those boards as an area.
+    highlight = .g3_highlight_squares(highlight, sq)
   )
+}
+
+# Expand a highlight (`squares`, `boards`, `platform`) into square ids.
+#' @noRd
+.g3_highlight_squares <- function(h, sq) {
+  if (is.null(h)) return(NULL)
+  area <- character()
+  if (length(h$boards)) area <- sq$square_id[sq$board %in% h$boards[!is.na(h$boards)]]
+  if (length(h$platform) && !is.na(h$platform[1L])) area <- c(area, sq$square_id[sq$board %in% h$platform])
+  focus <- h$squares[!is.na(h$squares)]
+  list(kind = h$kind %||% "hint", focus = as.list(unique(focus)), area = as.list(setdiff(unique(area), focus)))
 }
 
 #' Board widget module server
@@ -220,7 +234,8 @@
       p <- list(neutral_height = prefs$neutral_height, exploded = prefs$exploded)
       payload <- .g3_board_payload(
         v$state, v$token, p, last = v$last, interactive = v$interactive %||% TRUE,
-        kind = v$kind %||% "live", note = v$note, announce = v$announce, lang = lang()
+        kind = v$kind %||% "live", note = v$note, announce = v$announce, lang = lang(),
+        highlight = v$highlight
       )
       payload$widget <- widget
       session$sendCustomMessage("g3-board-state", payload)
@@ -265,6 +280,7 @@
 #' @noRd
 .g3_ack_text <- function(ack, lang = "en") {
   if (identical(ack$status, "committed")) return(.g3_t("ack.committed", lang))
+  if (identical(ack$status, "info")) return(ack$message %||% "")
   if (identical(ack$status, "duplicate")) return(.g3_t("ack.duplicate", lang))
   key <- paste0("ack.", ack$reason %||% "invalid_request")
   txt <- .g3_t(key, lang)

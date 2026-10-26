@@ -21,17 +21,23 @@
 
 #' Run the gambitR3D app
 #'
-#' Starts the local Shiny application: play hotseat or against the built-in
-#' search opponent on synchronised 2D and 3D boards, analyse a branch of the
-#' game, and inspect the rules profile. Games are autosaved after every
-#' committed action, as native game files under
-#' `tools::R_user_dir("gambitR3D", "data")/games` (or in the game database
-#' when `db_path` is given and the database API is available). All assets
-#' are bundled; the app makes no network requests.
+#' Starts the local Shiny application with seven sections: Play (hotseat,
+#' the built-in search, greedy and random baselines, or a registered model
+#' checkpoint, on synchronised 2D and 3D boards), Analyse (a separate
+#' branch, whole-game analysis with linked plot, move table, tactics,
+#' heatmap and report export), Database (the game catalogue: filters,
+#' detail, import, export, delete and restore, backup), Coach (post-game
+#' review and action explanations), Models (registry and validation),
+#' Training (practice exercises with hints, and bounded opponent training)
+#' and Settings. Every committed action is saved before it is shown: in the
+#' game catalogue (`db_path`, by default
+#' `tools::R_user_dir("gambitR3D", "data")/games.sqlite`), or as native game
+#' files when the catalogue cannot be used. Long work runs in background
+#' processes. All assets are bundled; the app makes no network requests.
 #'
-#' @param db_path Optional path to a gambitR3D SQLite game database. When it
-#'   is given and this build provides the database API, games are saved
-#'   there; otherwise games are saved as files.
+#' @param db_path Path of the SQLite game catalogue; `NULL` (default) uses
+#'   `games.sqlite` in the storage folder, and `FALSE` saves native game
+#'   files instead.
 #' @param host Address to listen on. The default `"127.0.0.1"` accepts
 #'   connections from this computer only. Any other address makes the app
 #'   reachable from other machines without authentication, and a warning is
@@ -44,9 +50,9 @@
 #'   stops (normally `NULL`). Called for its side effect of running the app.
 #' @examples
 #' \dontrun{
-#' # Opens a browser window; stop with Ctrl+C or Esc in the console.
+#' # Interactive: opens a browser window; stop with Ctrl+C or Esc.
 #' gambitR3D::g3_run_app()
-#' # Neutral board lowest and the game database (if available):
+#' # A separate catalogue file:
 #' gambitR3D::g3_run_app(db_path = base::file.path(base::tempdir(), "games.sqlite"))
 #' }
 #' @export
@@ -150,10 +156,10 @@ g3_run_app <- function(db_path = NULL, host = "127.0.0.1", port = NULL, launch.b
   sections <- list(
     play = .g3_play_ui("play", lang),
     analyse = .g3_analyse_ui("analyse", lang),
-    database = .g3_section_ui("database", "nav.database", lang),
-    coach = .g3_section_ui("coach", "nav.coach", lang),
-    models = .g3_section_ui("models", "nav.models", lang),
-    training = .g3_section_ui("training", "nav.training", lang),
+    database = .g3_database_ui("database", lang),
+    coach = .g3_coach_ui("coach", lang),
+    models = .g3_models_ui("models", lang),
+    training = .g3_training_ui("training", lang),
     settings = .g3_settings_ui("settings", lang, config)
   )
   ui <- bslib::page(
@@ -226,7 +232,7 @@ g3_run_app <- function(db_path = NULL, host = "127.0.0.1", port = NULL, launch.b
     app$live <- .g3_new_store(game0, "live", saver = saver)
     app$live_tick <- shiny::reactiveVal(0L)
     app$live_bump <- function() app$live_tick(shiny::isolate(app$live_tick()) + 1L)
-    app$jobs <- shiny::reactiveValues(opponent = FALSE, analysis = FALSE)
+    app$jobs <- shiny::reactiveValues(opponent = FALSE)
     app$set_job <- function(name, active) app$jobs[[name]] <- isTRUE(active)
     app$notify <- function(text, type = "message") {
       shiny::showNotification(text, type = if (type == "error") "error" else "message", session = session)
@@ -236,6 +242,24 @@ g3_run_app <- function(db_path = NULL, host = "127.0.0.1", port = NULL, launch.b
       shiny::updateTabsetPanel(session, "sections", selected = section)
       session$sendCustomMessage("g3-nav", list(section = section, focus = TRUE))
     }
+    # Replace the live game (resume from the catalogue, or a new game against
+    # a chosen model); both go through the dispatcher.
+    app$resume_in_play <- function(game) {
+      shiny::isolate(app$dispatch_live(.g3_store_request(app$live, "replace", game = game)))
+    }
+    app$start_model_game <- function(model_id, mode = "policy", human = "white") {
+      game <- tryCatch(.g3_build_new_game("computer", human, paste0("model:", sub("^model:", "", model_id)),
+                                          "standard", shiny::isolate(app$lang()), model_mode = mode),
+                       error = function(e) e)
+      if (inherits(game, "error")) {
+        app$notify(conditionMessage(game), "error")
+        return(invisible(NULL))
+      }
+      ack <- app$resume_in_play(game)
+      if (identical(ack$status, "committed")) app$go("play") else app$notify(.g3_ack_text(ack, "en"), "error")
+      invisible(ack)
+    }
+    app$review <- shiny::reactiveVal(NULL)
     session$userData$g3 <- app
 
     .g3_nav_server(input, session, app)
@@ -278,7 +302,8 @@ g3_run_app <- function(db_path = NULL, host = "127.0.0.1", port = NULL, launch.b
 
     output$jobs <- shiny::renderUI({
       l <- app$lang()
-      active <- c(opponent = app$jobs$opponent, analysis = app$jobs$analysis)
+      jl <- shiny::reactiveValuesToList(app$jobs)
+      active <- vapply(jl, isTRUE, TRUE)
       if (!any(active)) return(NULL)
       htmltools::tagList(lapply(names(active)[active], function(j) {
         htmltools::span(class = "g3-chip g3-chip-job", role = "status",

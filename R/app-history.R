@@ -57,7 +57,7 @@
   if (!is.null(la$to)) rows[[length(rows) + 1L]] <- c(t("coach.fact_to"), la$to)
   if (!is.null(la$platform)) {
     rows[[length(rows) + 1L]] <- c(t("coach.fact_platform"),
-                                   paste0(la$platform, " → ", la$dock,
+                                   paste0(la$platform, " \u2192 ", la$dock,
                                           if (identical(as.integer(la$rotation), 180L)) paste0(" (", t("board.turned"), ")") else ""))
   }
   rows[[length(rows) + 1L]] <- c(t("coach.fact_capture"), la$capture %||% t("common.none"))

@@ -58,7 +58,9 @@
 .g3_opponent_settings <- function(game) {
   if (!identical(game$metadata$mode, "computer")) return(NULL)
   o <- game$metadata$opponent
-  if (!is.list(o) || !isTRUE(o$agent %in% names(.G3_APP_AGENTS)) || !isTRUE(o$color %in% .G3_COLORS)) {
+  ok_agent <- isTRUE(o$agent %in% names(.G3_APP_AGENTS)) ||
+    (is.character(o$agent) && length(o$agent) == 1L && startsWith(o$agent, "model:"))
+  if (!is.list(o) || !ok_agent || !isTRUE(o$color %in% .G3_COLORS)) {
     return(NULL)
   }
   o$nodes <- as.integer(o$nodes %||% .G3_APP_BUDGETS[["standard"]])
@@ -88,12 +90,25 @@
   opp$for_revision <- store$revision
   dir.create(jobs_dir, recursive = TRUE, showWarnings = FALSE)
   budget <- list(nodes = o$nodes)
+  agent <- o$agent
+  if (startsWith(agent, "model:")) {
+    # Resolve the model here, so the job carries absolute artifact paths and
+    # does not depend on this session's options; the job process finds the
+    # ML environment through G3_ML_ENV or the default location.
+    agent <- tryCatch(.g3_model_resolve(agent), error = function(e) e)
+    if (inherits(agent, "error")) {
+      opp$status <- "failed"
+      opp$message <- conditionMessage(agent)
+      return(invisible(opp))
+    }
+    budget <- list(mode = o$mode %||% "policy", simulations = as.integer(o$simulations %||% 32L))
+  }
   # Warnings here (an unwritable folder) precede an error; the error message
   # is what the user sees.
   job <- suppressWarnings(tryCatch(
     g3_start_job(list(
       type = "search", label = "opponent",
-      args = list(state = store$game$state, agent = o$agent, budget = budget,
+      args = list(state = store$game$state, agent = agent, budget = budget,
                   seed = .g3_opponent_seed(store$game)),
       limits = list(wall_seconds = .G3_OPPONENT_WALL_SECONDS),
       job_dir = jobs_dir

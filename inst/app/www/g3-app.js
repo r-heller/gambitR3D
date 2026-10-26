@@ -179,8 +179,37 @@
     document.body.setAttribute('data-section', section);
   }
 
+  // Table rows and lists rendered by the server use `data-g3-click` (an
+  // input name) and `data-g3-value` instead of one Shiny input per row;
+  // checkboxes with `data-g3-select` report the checked values together.
+  const selectNames = new Set();
+  function sendSelection(name) {
+    const vals = Array.from(document.querySelectorAll('input[data-g3-select="' + name + '"]:checked'))
+      .map(function (c) { return c.value; });
+    if (window.Shiny && window.Shiny.setInputValue) window.Shiny.setInputValue(name, vals);
+  }
+  function refreshSelections() {
+    document.querySelectorAll('input[data-g3-select]').forEach(function (c) {
+      selectNames.add(c.getAttribute('data-g3-select'));
+    });
+    selectNames.forEach(sendSelection);
+  }
+  G3.refreshSelections = refreshSelections;
+
   function bindNavigation() {
+    document.addEventListener('change', function (ev) {
+      const c = ev.target.closest('input[data-g3-select]');
+      if (c) {
+        selectNames.add(c.getAttribute('data-g3-select'));
+        sendSelection(c.getAttribute('data-g3-select'));
+      }
+    });
     document.addEventListener('click', function (ev) {
+      const gc = ev.target.closest('[data-g3-click]');
+      if (gc) {
+        setInput(gc.getAttribute('data-g3-click'), { value: gc.getAttribute('data-g3-value'), nonce: Date.now() });
+        return;
+      }
       const btn = ev.target.closest('.g3-nav-btn[data-section]');
       if (btn) {
         const section = btn.getAttribute('data-section');
@@ -423,6 +452,13 @@
       window.clearTimeout(this.pendingTimer);
       const ok = ack.status === 'committed' || (ack.status === 'duplicate' && ack.original_status === 'committed');
       this.pending = null;
+      if (ack.status === 'info') {
+        // A board that answers instead of playing (coach, exercises).
+        this.selection = null;
+        this.message = { type: 'info', text: ack.message_text || '' };
+        this.render();
+        return;
+      }
       if (ok) {
         this.message = null;
         if (!this.state || this.state.revision < ack.revision) this.awaitRevision = ack.revision;
@@ -649,6 +685,7 @@
         out.lastPlatform = p.last.type === 'platform' ? p.last.platform : null;
       }
       out.check = p.check_square || null;
+      out.highlight = p.highlight || null;
       if (this.pending && this.pending.action) out.pending = this.pending.action.to || null;
       return out;
     }
@@ -857,6 +894,16 @@
       if (marks.check === s.id) {
         c.classList.add('is-check');
         status.push(G3.t('cell.check'));
+      }
+      const hl = marks.highlight;
+      if (hl) {
+        if ((hl.focus || []).indexOf(s.id) >= 0) {
+          c.classList.add('is-hint');
+          status.push(G3.t('cell.highlight_' + (hl.kind || 'hint')));
+        } else if ((hl.area || []).indexOf(s.id) >= 0) {
+          c.classList.add('is-hint-area');
+          status.push(G3.t('cell.highlight_area'));
+        }
       }
       const label = G3.boardName(s.board) + ' ' + s.coord + ', ' + G3.pieceName(piece) +
         (status.length ? '. ' + status.join(', ') : '');
@@ -1140,15 +1187,22 @@
     S.addCustomMessageHandler('g3-nav', function (m) {
       markSection(m.section);
       if (m.focus) {
-        window.setTimeout(function () {
+        // Focus the new section's heading once its pane is shown (the tab
+        // switch and this message can arrive in either order).
+        const tryFocus = function (n) {
           const pane = document.querySelector('.tab-pane[data-value="' + m.section + '"]');
           const h = pane && pane.querySelector('.g3-section-title');
-          if (h) h.focus({ preventScroll: false });
-          Object.keys(G3.boards).forEach(function (id) {
-            const b = G3.boards[id];
-            if (b.scene) b.scene.resize();
-          });
-        }, 30);
+          if (h && pane.offsetParent !== null) {
+            h.focus({ preventScroll: false });
+            Object.keys(G3.boards).forEach(function (id) {
+              const b = G3.boards[id];
+              if (b.scene) b.scene.resize();
+            });
+          } else if (n < 40) {
+            window.setTimeout(function () { tryFocus(n + 1); }, 50);
+          }
+        };
+        window.setTimeout(function () { tryFocus(0); }, 30);
       }
     });
   }
@@ -1166,7 +1220,10 @@
       sent = true;
       sendClientPrefs();
     };
-    if (window.jQuery) window.jQuery(document).on('shiny:connected', onConnected);
+    if (window.jQuery) {
+      window.jQuery(document).on('shiny:connected', onConnected);
+      window.jQuery(document).on('shiny:value', function () { window.setTimeout(refreshSelections, 0); });
+    }
     if (window.Shiny && window.Shiny.shinyapp && window.Shiny.shinyapp.isConnected && window.Shiny.shinyapp.isConnected()) {
       onConnected();
     }

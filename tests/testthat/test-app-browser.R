@@ -215,14 +215,32 @@ test_that("2D select and move, the same state in 3D, 3D picking and x-ray choose
   expect_equal(d3$scene$boards$W$z, 3)
   expect_equal(d3$scene$boards$B$z, -3)
   shot(app, "02-3d-same-state-1440-light-highest.png")
-  # Pick the black knight on B b8 in the WebGL view. From White's side its
-  # square lies behind N b6, so the pick opens the occlusion chooser instead
-  # of guessing; choosing B b8 there selects the knight.
-  pick_3d(app, "B:0:3")
+  # Find a black piece with legal actions whose square is hidden, from this
+  # camera, behind another square (the nearest hit is not the piece's
+  # square). Clicking it opens the occlusion chooser instead of guessing;
+  # choosing it there selects the piece.
+  app$run_js("document.querySelector('#play-board .g3-view-3d').scrollIntoView({block:'center', behavior:'instant'})")
+  Sys.sleep(0.3)
+  hidden <- app$get_js("(function(){var b=G3.boards['play-board']; var out=null;
+    Object.keys(b.byFrom).concat(Object.keys(b.platformFrom)).forEach(function(sq){
+      if (out) return; var p=b.scene.projectSquare(sq); if(!p) return;
+      var h=b.scene.hits(p.x, p.y); if (h.length > 1 && h[0] !== sq && h.indexOf(sq) > 0) out = {square: sq, first: h[0]};
+    }); return out;})()")
+  # From White's side at the default elevation, B's rank 7 lies behind N.
+  expect_false(is.null(hidden))
+  pick_3d(app, hidden$square)
   occl <- unlist(app$get_js("Array.from(document.querySelectorAll('#play-board .g3-action-panel [data-act=\"square\"]')).map(function(b){return b.getAttribute('data-arg')})"))
-  expect_identical(occl, c("N:0:3", "B:0:3"))
+  expect_true(hidden$square %in% occl)
+  expect_identical(occl[1], hidden$first)
   shot(app, "03a-3d-occlusion-chooser-1440.png")
-  click_el(app, "#play-board .g3-action-panel [data-act='square'][data-arg='B:0:3']")
+  click_el(app, sprintf("#play-board .g3-action-panel [data-act='square'][data-arg='%s']", hidden$square))
+  expect_identical(dbg(app)$selection, hidden$square)
+  app$run_js("G3.boards['play-board'].cancel()")
+  # Select the knight on B b8 for the x-ray step.
+  pick_3d(app, "B:0:3")
+  if (!identical(dbg(app)$selection, "B:0:3")) {
+    click_el(app, "#play-board .g3-action-panel [data-act='square'][data-arg='B:0:3']")
+  }
   expect_identical(dbg(app)$selection, "B:0:3")
   # Turn on x-ray and click where B c6 lies under N c6: every square under
   # the pointer is offered.
@@ -433,6 +451,8 @@ test_that("with WebGL disabled the board falls back to a working 2D view", {
   app$wait_for_js("G3.debug.board('play-board').fallback === 'webgl'", timeout = 20000)
   d <- dbg(app)
   expect_identical(d$view, "2d")
+  app$wait_for_js("document.querySelector('#play-board .g3-board-notices').textContent.indexOf('WebGL') >= 0",
+                  timeout = 10000)
   expect_match(app$get_js("document.querySelector('#play-board .g3-board-notices').textContent"), "WebGL")
   click_cell(app, "W:3:1")
   click_cell(app, "W:3:2")
@@ -495,6 +515,10 @@ layout_check <- function(w) {
       wait_scene(app)
       expect_identical(dbg(app)$selection, "W:2:1")
       expect_equal(dbg(app)$scene$boards$N$y, if (h == "highest") 3.4 else 0)
+      # The default camera keeps all seven boards inside the canvas.
+      inv <- unlist(dbg(app)$scene$in_view)
+      expect_setequal(names(inv), c("W", "N", "B", "WQ", "WK", "BQ", "BK"))
+      expect_true(all(inv == 1), info = paste(names(inv), inv, collapse = " "))
       rep3 <- layout_report(app)
       expect_lte(rep3$scroll, rep3$client)
       shot_viewport(app, sprintf("15-layout-%d-%s-%s-3d.png", w, theme, h))
@@ -537,11 +561,12 @@ test_that("navigation keeps the game, moves focus, offers More on phones, and sw
     expect_identical(app$get_js(sprintf("document.querySelector('.g3-rail [data-section=\"%s\"]').getAttribute('aria-current')", sec)), "page")
     shot(app, sprintf("17-section-%s-1440.png", sec))
   }
-  # Honest states: no enabled button pretends to work in the unconnected shells.
-  for (sec in c("database", "training")) {
-    n <- app$get_js(sprintf("document.querySelectorAll('.tab-pane[data-value=\"%s\"] button:not([disabled])').length", sec))
-    expect_identical(n, 0L)
-  }
+  # The sections are connected: the catalogue is open and lists this game,
+  # and the reference-only models cannot be chosen as opponents.
+  expect_match(app$get_js("document.querySelector('#database-status').textContent"), "games.sqlite", fixed = TRUE)
+  expect_match(app$get_js("document.querySelector('#database-table').textContent"),
+               dbg(app)$game_id, fixed = TRUE)
+  expect_match(app$get_js("document.querySelector('#models-list').textContent"), "reference only")
   app$run_js("Shiny.setInputValue('settings-lang', 'de')")
   app$wait_for_js("document.querySelector('.g3-rail [data-section=\"play\"] .g3-nav-label').textContent === 'Spielen'", timeout = 10000)
   click_el(app, ".g3-rail [data-section='play']")
