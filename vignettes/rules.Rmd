@@ -1,0 +1,189 @@
+---
+title: "Rules of the experimental profile"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Rules of the experimental profile}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 7, fig.height = 4.5, dpi = 96)
+has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
+```
+
+gambitR3D plays one experimental profile, `experimental-v0.1`. It is a
+transparent project convention: the basic board arrangement follows a supplied
+concept, and every question the concept leaves open is answered by an explicit,
+recorded decision. It is not an official rulebook of any published game.
+
+```{r}
+prof <- gambitR3D::g3_rules_profile()
+prof
+# Every decision, and whether it comes from the concept or is a proposed resolution.
+prof$decisions[, c("id", "topic", "origin")]
+```
+
+The rules hash is computed from the resolved semantics only. Changing any rule
+changes the hash, and games recorded under one hash cannot be replayed under
+another. Rewording an explanation does not change it.
+
+## Boards and physical squares
+
+There are three fixed 4×4 boards and four movable 2×2 platforms: 64 physical
+squares in all. Each square has a permanent id `board:u:v`, with zero-based
+local column `u` and row `v`. The board's position decides which projected file
+(`a`–`f`) and rank (`0`–`9`) a square stands on.
+
+| Board | Files | Ranks |
+|---|---|---|
+| W (White's main board) | b–e | 1–4 |
+| N (Neutral, the middle board) | b–e | 3–6 |
+| B (Black's main board) | b–e | 5–8 |
+
+W and N share eight projected coordinates (b–e, ranks 3–4), and N and B share
+eight more (b–e, ranks 5–6). Those coordinates exist twice, as two different
+physical squares. Selecting `b4` on W is never the same as selecting `b4` on N.
+
+```{r}
+st <- gambitR3D::g3_new_game()$state
+st
+```
+
+The four platforms are `WQ`, `WK`, `BQ` and `BK`. These names are persistent
+identities, not owners: a platform belongs to whoever has the single piece on it.
+At the start they stand on files a–b (`WQ`, `BQ`) and e–f (`WK`, `BK`), at the
+outer ends of W and B.
+
+## Display is not geometry
+
+The 3D view separates the boards so that White's and Black's main boards are
+exactly two square-widths apart, with Neutral centred between them, shown
+highest or lowest. That spacing exists only on screen. It adds no ranks and
+changes no move: legal actions, keys and every analysis are identical whatever
+the display settings. The diagrams below show the plan view used by the 3D
+scene (square centres at `x = file - 2.5`, `z = 4.5 - rank + offset`, with
+offsets +1 for W, 0 for N, -1 for B) and, for comparison, the logical
+projection without offsets, where W/N and N/B overlap.
+
+```{r plan-view, eval = has_ggplot, fig.alt = "Plan view of the seven boards in display spacing and in the logical projection"}
+tabs <- gambitR3D:::.g3_tables()
+core <- gambitR3D:::.g3_core(st, tabs)
+co <- gambitR3D:::.g3_square_coords(core$dock, core$orient, tabs)
+board <- tabs$board_ids[tabs$sq_board]
+parent <- ifelse(board %in% c("W", "N", "B"), board,
+                 substr(tabs$dock_ids[core$dock[match(board, c("WQ", "WK", "BQ", "BK"))]], 1, 1))
+offset <- c(W = 1, N = 0, B = -1)[parent]
+squares <- rbind(
+  data.frame(view = "Display spacing (3D scene, plan view)", board = board,
+             x = co$file - 2.5, z = 4.5 - co$rank + offset),
+  data.frame(view = "Logical projection (no display offsets)", board = board,
+             x = co$file - 2.5, z = 4.5 - co$rank)
+)
+squares$label <- paste0(c("a", "b", "c", "d", "e", "f")[co$file + 1], co$rank)
+# In display spacing one row of N lies over one row of W and of B in plan
+# view: nudge the labels apart (N below, others above) so both stay legible.
+disp <- squares$view == squares$view[1]
+squares$label_z <- squares$z + ifelse(disp, ifelse(squares$board == "N", -0.22, 0.22), 0)
+ggplot2::ggplot(squares, ggplot2::aes(x, z)) +
+  ggplot2::geom_tile(ggplot2::aes(fill = board), width = 0.94, height = 0.94, alpha = 0.55) +
+  ggplot2::geom_text(ggplot2::aes(y = label_z, label = label), size = 2.2) +
+  ggplot2::facet_wrap(~view) +
+  ggplot2::scale_fill_viridis_d(option = "D", end = 0.9) +
+  ggplot2::coord_equal() +
+  ggplot2::labs(x = "x (files)", y = "z (towards White)", fill = "Board") +
+  ggplot2::theme_minimal(base_size = 10)
+```
+
+In display spacing the facing edges of W (at z = +1) and B (at z = -1) are two
+units apart. Neutral overlaps one rendered row of each outer board in plan view;
+in the logical projection the overlap is the two shared ranks.
+
+## Moving pieces
+
+Moves are measured in projected files and ranks. A piece may land on any
+existing physical square that fits its pattern, empty or holding an enemy; only
+that exact occupant is captured. Moving to the same projected coordinate on
+another board is not a move.
+
+Sliding pieces are blocked by any piece on any board standing on a coordinate
+they cross (decision D07). Rays may pass coordinates that have no square, but
+cannot end there. Pieces on other boards at the starting coordinate do not block.
+
+```{r}
+pieces <- data.frame(
+  id = c("wR", "wK", "bP", "bK"), type = c("R", "K", "P", "K"),
+  color = c("white", "white", "black", "black"),
+  square_id = c("W:0:0", "WK:0:0", "N:0:0", "B:3:3")
+)
+pos <- gambitR3D::g3_setup_position(pieces)
+acts <- gambitR3D::g3_legal_actions(pos)
+# The rook reaches W:b3 and captures on N:b3, but the pawn on N:b3 blocks
+# the coordinate b3, so W:b4 is out of reach although W itself is empty.
+acts$label[acts$piece_id == "wR"]
+```
+
+Knights jump (1, 2) in projected coordinates; kings step one coordinate in any
+direction. Two kings on the same projected coordinate on different boards are
+not adjacent and do not attack each other (D08).
+
+Pawns move one rank forward to an empty square, capture one file aside and one
+rank forward, and an unmoved pawn may step two ranks if no piece on any board
+stands on the crossed coordinate (D09). White moves towards rank 9, Black
+towards rank 0; a platform's rotation never changes that.
+
+## Moving platforms
+
+A platform can move when it carries exactly one piece, belonging to the player
+to act (D05). It goes to an adjacent free dock, either keeping its orientation
+or turned by 180°. The pieces stay on their physical squares; their projected
+coordinates change with the platform.
+
+```{r}
+docks <- prof$semantics$dock_adjacency
+data.frame(dock = names(docks), neighbours = vapply(docks, function(x) paste(unlist(x), collapse = ", "), ""))
+```
+
+The adjacency graph (D04) connects, on one board, the corners on the same pin
+rank or pin file, and between W–N and N–B the same-side docks whose pin ranks are
+at most two apart. W and B are never directly connected. It is an inferred
+graph, consistent with the concept's examples, not the only possible reading.
+
+Transport consumes rights: the carried piece counts as moved, a carried king or
+rook loses castling, a carried pawn loses its double step and resets the
+100-ply counter (D10). A platform carrying the king may leave check if the
+destination is safe; the path in between means nothing.
+
+## Special actions
+
+- **Promotion (D11)** happens on arrival: White on rank 8 of B or rank 9 of a
+  platform docked at a B high dock; Black on rank 1 of W or rank 0 of a platform
+  at a W low dock. A platform action that brings its pawn there includes the
+  promotion choice. Nothing promotes passively.
+- **En passant (D12)** follows only an individual pawn double step; the capturing
+  pawn may land on any empty square at the crossed coordinate.
+- **Castling (D13, D14)** is a compound action after the player's first turn,
+  with the original king and rook on their home squares and home docks. King
+  side swaps king and rook on the king platform; queen side moves the king to
+  b0/b9 and the rook to e0/e9, needs b0/b9 empty and nothing on the projected d
+  and c coordinates, and probes d, c and b for attacks even where no square
+  exists.
+
+## End of the game
+
+Checkmate and stalemate count platform actions as possible escapes. Automatic
+draws are the third repetition, 100 plies without a capture or pawn action, and
+bare kings (D16). They are decided in the order checkmate, stalemate,
+repetition, 100-ply limit, bare kings (D17). A computer simulation that stops at
+a ply limit is *truncated*, never a draw.
+
+```{r}
+mate <- gambitR3D::g3_setup_position(data.frame(
+  id = c("wK", "bN", "bR1", "bR2", "bB", "bK"),
+  type = c("K", "N", "R", "R", "B", "K"),
+  color = c("white", rep("black", 5)),
+  square_id = c("WK:0:0", "W:2:1", "N:3:3", "BK:1:1", "N:0:0", "B:0:3")
+))
+# White's king is attacked; no king step and no platform destination is safe.
+mate$outcome
+```
