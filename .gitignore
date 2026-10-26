@@ -1,0 +1,23 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.DS_Store
+docs/
+inst/doc/
+/doc/
+/Meta/
+*.Rcheck/
+*.tar.gz
+*.tmp
+*.log
+*~
+_coverage/
+.claude/
+CLAUDE.md
+__pycache__/
+*.pyc
+
+# orchestration / build prompts and run logs - not part of the package
+.orchestration/
+dev/

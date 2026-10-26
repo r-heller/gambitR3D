@@ -1,0 +1,198 @@
+{
+  "profile_id": "experimental-v0.1",
+  "format": "gambitR3D-rules/1",
+  "status": "project_convention_not_official_certification",
+  "semantics": {
+    "coordinates": {
+      "files": ["a", "b", "c", "d", "e", "f"],
+      "file_index_min": 0,
+      "file_index_max": 5,
+      "rank_min": 0,
+      "rank_max": 9,
+      "square_id_pattern": "board:u:v",
+      "local_index_base": 0
+    },
+    "main_boards": [
+      {"id": "W", "min_file": 1, "min_rank": 1, "size": 4},
+      {"id": "N", "min_file": 1, "min_rank": 3, "size": 4},
+      {"id": "B", "min_file": 1, "min_rank": 5, "size": 4}
+    ],
+    "platforms": [
+      {"id": "WQ", "size": 2, "initial_dock": "W:L:lo", "initial_orientation": 0},
+      {"id": "WK", "size": 2, "initial_dock": "W:R:lo", "initial_orientation": 0},
+      {"id": "BQ", "size": 2, "initial_dock": "B:L:hi", "initial_orientation": 0},
+      {"id": "BK", "size": 2, "initial_dock": "B:R:hi", "initial_orientation": 0}
+    ],
+    "square_order": ["W", "N", "B", "WQ", "WK", "BQ", "BK"],
+    "square_order_within_board": "v_then_u",
+    "docks": {
+      "parents": ["W", "N", "B"],
+      "sides": ["L", "R"],
+      "ends": ["lo", "hi"],
+      "pin_file": {"L": 1, "R": 4},
+      "pin_ranks": {"W": [1, 4], "N": [3, 6], "B": [5, 8]},
+      "platform_min_file": {"L": 0, "R": 4},
+      "platform_min_rank_offset": {"lo": -1, "hi": 3},
+      "orientations": [0, 180],
+      "orientation_transform": {
+        "0": "file = min_file + u; rank = min_rank + v",
+        "180": "file = min_file + 1 - u; rank = min_rank + 1 - v"
+      }
+    },
+    "dock_adjacency": {
+      "W:L:lo": ["W:R:lo", "W:L:hi", "N:L:lo"],
+      "W:R:lo": ["W:L:lo", "W:R:hi", "N:R:lo"],
+      "W:L:hi": ["W:R:hi", "W:L:lo", "N:L:lo", "N:L:hi"],
+      "W:R:hi": ["W:L:hi", "W:R:lo", "N:R:lo", "N:R:hi"],
+      "N:L:lo": ["N:R:lo", "N:L:hi", "W:L:lo", "W:L:hi", "B:L:lo"],
+      "N:R:lo": ["N:L:lo", "N:R:hi", "W:R:lo", "W:R:hi", "B:R:lo"],
+      "N:L:hi": ["N:R:hi", "N:L:lo", "W:L:hi", "B:L:lo", "B:L:hi"],
+      "N:R:hi": ["N:L:hi", "N:R:lo", "W:R:hi", "B:R:lo", "B:R:hi"],
+      "B:L:lo": ["B:R:lo", "B:L:hi", "N:L:lo", "N:L:hi"],
+      "B:R:lo": ["B:L:lo", "B:R:hi", "N:R:lo", "N:R:hi"],
+      "B:L:hi": ["B:R:hi", "B:L:lo", "N:L:hi"],
+      "B:R:hi": ["B:L:hi", "B:R:lo", "N:R:hi"]
+    },
+    "dock_adjacency_rule": {
+      "same_parent": "other corner on the same pin rank or the same pin file",
+      "adjacent_parents": [["W", "N"], ["N", "B"]],
+      "cross_parent_same_side_max_pin_rank_distance": 2,
+      "direct_W_B": false
+    },
+    "setup": [
+      {"id": "wNb1", "type": "N", "color": "white", "square": "W:0:0"},
+      {"id": "wBc1", "type": "B", "color": "white", "square": "W:1:0"},
+      {"id": "wBd1", "type": "B", "color": "white", "square": "W:2:0"},
+      {"id": "wNe1", "type": "N", "color": "white", "square": "W:3:0"},
+      {"id": "wPb2", "type": "P", "color": "white", "square": "W:0:1"},
+      {"id": "wPc2", "type": "P", "color": "white", "square": "W:1:1"},
+      {"id": "wPd2", "type": "P", "color": "white", "square": "W:2:1"},
+      {"id": "wPe2", "type": "P", "color": "white", "square": "W:3:1"},
+      {"id": "wRa0", "type": "R", "color": "white", "square": "WQ:0:0"},
+      {"id": "wQ", "type": "Q", "color": "white", "square": "WQ:1:0"},
+      {"id": "wPa1", "type": "P", "color": "white", "square": "WQ:0:1"},
+      {"id": "wPb1", "type": "P", "color": "white", "square": "WQ:1:1"},
+      {"id": "wK", "type": "K", "color": "white", "square": "WK:0:0"},
+      {"id": "wRf0", "type": "R", "color": "white", "square": "WK:1:0"},
+      {"id": "wPe1", "type": "P", "color": "white", "square": "WK:0:1"},
+      {"id": "wPf1", "type": "P", "color": "white", "square": "WK:1:1"},
+      {"id": "bNb8", "type": "N", "color": "black", "square": "B:0:3"},
+      {"id": "bBc8", "type": "B", "color": "black", "square": "B:1:3"},
+      {"id": "bBd8", "type": "B", "color": "black", "square": "B:2:3"},
+      {"id": "bNe8", "type": "N", "color": "black", "square": "B:3:3"},
+      {"id": "bPb7", "type": "P", "color": "black", "square": "B:0:2"},
+      {"id": "bPc7", "type": "P", "color": "black", "square": "B:1:2"},
+      {"id": "bPd7", "type": "P", "color": "black", "square": "B:2:2"},
+      {"id": "bPe7", "type": "P", "color": "black", "square": "B:3:2"},
+      {"id": "bRa9", "type": "R", "color": "black", "square": "BQ:0:1"},
+      {"id": "bQ", "type": "Q", "color": "black", "square": "BQ:1:1"},
+      {"id": "bPa8", "type": "P", "color": "black", "square": "BQ:0:0"},
+      {"id": "bPb8", "type": "P", "color": "black", "square": "BQ:1:0"},
+      {"id": "bK", "type": "K", "color": "black", "square": "BK:0:1"},
+      {"id": "bRf9", "type": "R", "color": "black", "square": "BK:1:1"},
+      {"id": "bPe8", "type": "P", "color": "black", "square": "BK:0:0"},
+      {"id": "bPf8", "type": "P", "color": "black", "square": "BK:1:0"}
+    ],
+    "first_side": "white",
+    "pawn_direction": {"white": 1, "black": -1},
+    "movement": {
+      "displacement_space": "projected_file_rank",
+      "zero_projected_displacement": "forbidden",
+      "destination": "any_existing_physical_square_matching_pattern",
+      "capture": "exact_physical_occupant_only",
+      "ray_intermediate_blockers": "any_occupant_on_any_board",
+      "ignore_other_boards_at_source_coordinate": true,
+      "rays_cross_missing_coordinates": true,
+      "knight": [[1, 2], [2, 1]],
+      "king": "chebyshev_one_nonzero",
+      "pawn_single_step_destination": "chosen_physical_square_empty",
+      "pawn_double_step": "has_moved_false_intermediate_coordinate_empty_on_all_boards_destination_empty",
+      "pawn_vertical_move": false
+    },
+    "platform_actions": {
+      "occupants_required": 1,
+      "occupant_owner": "moving_player",
+      "destination_dock": "adjacent_and_unoccupied",
+      "rotation_choices": [0, 180],
+      "rotation_only_on_same_dock": false,
+      "captures_by_projection": false,
+      "marks_carried_piece_moved": true,
+      "revokes_carried_king_rook_castling": true,
+      "consumes_pawn_double_step": true,
+      "pawn_transport_resets_halfmove": true,
+      "creates_en_passant": false
+    },
+    "check": {
+      "attack_model": "geometric_threat_not_legal_moves",
+      "pinned_piece_attacks_count": true,
+      "king_capture": "never_generated",
+      "platform_may_escape_check": true,
+      "same_projection_kings_adjacent": false
+    },
+    "promotion": {
+      "white": {"main_board": "B", "main_rank": 8, "platform_docks": ["B:L:hi", "B:R:hi"], "platform_rank": 9},
+      "black": {"main_board": "W", "main_rank": 1, "platform_docks": ["W:L:lo", "W:R:lo"], "platform_rank": 0},
+      "choices": ["Q", "R", "B", "N"],
+      "mandatory": true,
+      "by_platform_action": true,
+      "passive_promotion": false
+    },
+    "en_passant": {
+      "created_by": "individual_pawn_double_step",
+      "victim": "exact_piece_id_and_physical_square",
+      "capture_destination": "any_empty_existing_square_at_crossed_coordinate",
+      "expires_after_next_action": true
+    },
+    "castling": {
+      "requires_first_turn_completed": true,
+      "white": {
+        "king": "wK",
+        "kingside": {"rook": "wRf0", "king_from": "WK:0:0", "rook_from": "WK:1:0", "king_to": "WK:1:0", "rook_to": "WK:0:0", "home_docks": {"WK": "W:R:lo"}, "clear_coordinates": [], "probe_coordinates": [], "empty_squares": []},
+        "queenside": {"rook": "wRa0", "king_from": "WK:0:0", "rook_from": "WQ:0:0", "king_to": "WQ:1:0", "rook_to": "WK:0:0", "home_docks": {"WQ": "W:L:lo", "WK": "W:R:lo"}, "clear_coordinates": [[3, 0], [2, 0]], "probe_coordinates": [[3, 0], [2, 0], [1, 0]], "empty_squares": ["WQ:1:0"]}
+      },
+      "black": {
+        "king": "bK",
+        "kingside": {"rook": "bRf9", "king_from": "BK:0:1", "rook_from": "BK:1:1", "king_to": "BK:1:1", "rook_to": "BK:0:1", "home_docks": {"BK": "B:R:hi"}, "clear_coordinates": [], "probe_coordinates": [], "empty_squares": []},
+        "queenside": {"rook": "bRa9", "king_from": "BK:0:1", "rook_from": "BQ:0:1", "king_to": "BQ:1:1", "rook_to": "BK:0:1", "home_docks": {"BQ": "B:L:hi", "BK": "B:R:hi"}, "clear_coordinates": [[3, 9], [2, 9]], "probe_coordinates": [[3, 9], [2, 9], [1, 9]], "empty_squares": ["BQ:1:1"]}
+      },
+      "home_orientation": 0,
+      "probe_removes_king_from_source": true,
+      "source_must_be_safe": true,
+      "final_must_be_safe": true,
+      "rights_restored_by_returning": false
+    },
+    "draws": {
+      "repetition_count": 3,
+      "halfmove_limit": 100,
+      "halfmove_resets": ["capture", "pawn_move", "pawn_transport"],
+      "bare_kings": true,
+      "orthodox_insufficient_material": false,
+      "truncation_is_draw": false
+    },
+    "terminal_precedence": ["checkmate", "stalemate", "repetition", "halfmove", "bare_kings"],
+    "repetition_key": {
+      "includes": ["rules_hash", "side", "square_occupancy", "platform_docks_orientations", "castling_rights", "first_turn_completed_while_castling_relevant", "pawn_double_step_rights", "effective_en_passant"],
+      "excludes": ["ply", "clocks", "repetition_counts", "annotations", "presentation", "piece_ids"]
+    }
+  },
+  "decisions": [
+    {"id": "D01", "topic": "Board identity", "origin": "supplied_concept", "path": "main_boards, platforms", "rationale": "Three fixed 4x4 boards and four movable 2x2 platforms give 64 physical squares. A square keeps its id board:u:v for the whole game; projected file and rank are derived from the board's current position."},
+    {"id": "D02", "topic": "Main-board placement", "origin": "supplied_concept", "path": "main_boards", "rationale": "W covers b-e/1-4, N covers b-e/3-6 and B covers b-e/5-8, so W/N and N/B share eight projected coordinates each while every physical square stays distinct."},
+    {"id": "D03", "topic": "Dock geometry", "origin": "proposed_resolution", "path": "docks", "rationale": "Each main board has four corner pins. A platform at a left pin covers files a-b, at a right pin e-f; at a low pin it starts one rank below the board, at a high pin three ranks above the board's first rank."},
+    {"id": "D04", "topic": "Dock adjacency", "origin": "proposed_resolution", "path": "dock_adjacency", "rationale": "Inferred graph: on one board, the other corner on the same pin rank or file; between W-N and N-B, same-side pins at most two ranks apart; never W-B directly. It matches the illustrated five destinations from a middle low dock and three from an outer rear dock, but those examples do not prove every edge."},
+    {"id": "D05", "topic": "Platform eligibility", "origin": "proposed_resolution", "path": "platform_actions.occupants_required", "rationale": "A platform moves only when it carries exactly one piece and that piece belongs to the mover. Empty, enemy-controlled and crowded platforms stay put; the four-piece starting platforms cannot move."},
+    {"id": "D06", "topic": "Rotation", "origin": "proposed_resolution", "path": "platform_actions.rotation_choices", "rationale": "Relocation keeps the orientation or turns it by 180 degrees; both are distinct actions. Turning in place without relocation is not an action."},
+    {"id": "D07", "topic": "Ray obstruction across boards", "origin": "proposed_resolution", "path": "movement.ray_intermediate_blockers", "rationale": "Any piece on any board blocks an intermediate projected coordinate. Pieces on other boards at the source coordinate are ignored, endpoint occupancy is checked only on the chosen destination square, and rays may pass coordinates with no physical square but cannot end there."},
+    {"id": "D08", "topic": "Zero projected displacement", "origin": "proposed_resolution", "path": "movement.zero_projected_displacement", "rationale": "Moving to the same projected file and rank on another board is not a move. Two kings at the same projected coordinate on different boards therefore do not attack each other."},
+    {"id": "D09", "topic": "Pawn double step", "origin": "proposed_resolution", "path": "movement.pawn_double_step", "rationale": "An unmoved pawn may advance two ranks if no piece on any board stands on the crossed coordinate and the chosen destination square is empty. Transport by a platform consumes this right."},
+    {"id": "D10", "topic": "Transport consumes rights", "origin": "proposed_resolution", "path": "platform_actions", "rationale": "Moving a platform marks its carried piece as moved, removes castling rights tied to a carried king or rook, and resets the 100-ply counter when it carries a pawn. Returning the platform never restores a right."},
+    {"id": "D11", "topic": "Promotion endpoints", "origin": "proposed_resolution", "path": "promotion", "rationale": "White promotes on arrival at rank 8 of B, or rank 9 of a platform docked at a B high dock; Black on rank 1 of W or rank 0 of a platform at a W low dock. Promotion is part of the arriving action, including a platform action, and never happens passively when some other platform moves."},
+    {"id": "D12", "topic": "En passant", "origin": "proposed_resolution", "path": "en_passant", "rationale": "Only an individual pawn double step creates the right. The capturing pawn lands on any empty square at the crossed coordinate and removes the recorded victim. The right lapses after the next action."},
+    {"id": "D13", "topic": "Castling", "origin": "proposed_resolution", "path": "castling", "rationale": "Castling is a compound action needing the original king and rook on their home squares and home docks, unspent rights and one completed earlier turn. King side swaps king and rook on the king platform; queen side moves the king to b0/b9 and the rook to e0/e9."},
+    {"id": "D14", "topic": "Queen-side castling safety", "origin": "proposed_resolution", "path": "castling.white.queenside", "rationale": "No piece on any board may stand on the projected d and c coordinates of the home rank. The king's source must be safe, and d, c and b are probed for attacks with the king lifted from its source, even where no physical square exists."},
+    {"id": "D15", "topic": "Check and king capture", "origin": "proposed_resolution", "path": "check", "rationale": "Attacks are geometric threats, not recursively legal moves. A platform carrying a king may leave check if the final position is safe; travel through intermediate docks has no meaning. Kings are never captured."},
+    {"id": "D16", "topic": "Automatic draws", "origin": "proposed_resolution", "path": "draws", "rationale": "Third repetition, 100 plies without capture or pawn action (pawn transport counts) and bare kings are automatic draws. Orthodox insufficient-material tables are not used. A computational cutoff is a truncation, never a draw."},
+    {"id": "D17", "topic": "Terminal precedence", "origin": "proposed_resolution", "path": "terminal_precedence", "rationale": "After a legal action the result is decided in this order: checkmate, stalemate, repetition, halfmove limit, bare kings."},
+    {"id": "D18", "topic": "Repetition identity", "origin": "proposed_resolution", "path": "repetition_key", "rationale": "Positions repeat when side, square occupancy by type and colour, platform docks and orientations, castling rights, first-turn eligibility while it matters, pawn double-step rights and an en-passant right that can actually be used are equal. Piece ids, ply and clocks are excluded."}
+  ]
+}

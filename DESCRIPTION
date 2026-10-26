@@ -1,0 +1,48 @@
+Package: gambitR3D
+Title: Multilevel Chess: Play, Analyse and Train
+Version: 0.1.0
+Authors@R: person("Raban", "Heller", email = "raban.heller@uni-ulm.de",
+    role = c("aut", "cre"), comment = c(ORCID = "0000-0001-8006-9742"))
+Description: An experimental multilevel chess variant on three fixed four by
+    four boards and four movable two by two platforms, with 64 physical
+    squares that keep their identity when platforms move. Provides an
+    authoritative rules engine with a versioned and hashed rules profile, a
+    lossless native game format, an alpha-beta search opponent, a local
+    'SQLite' game database, game and collection analysis with reproducible
+    plots and reports, a 'Shiny' application with synchronised 2D and 3D
+    views, evidence-grounded coaching and practice, and an optional isolated
+    'PyTorch' worker for training and playing a small transformer. The rules
+    are a transparent project convention, not an official rulebook. A
+    companion to 'gambitR'.
+License: MIT + file LICENSE
+URL: https://github.com/r-heller/gambitR3D
+BugReports: https://github.com/r-heller/gambitR3D/issues
+Encoding: UTF-8
+Language: en-GB
+Roxygen: list(markdown = TRUE)
+Depends: R (>= 4.1.0)
+Imports:
+    digest,
+    jsonlite,
+    stats,
+    tools,
+    utils
+Suggests:
+    bslib,
+    callr,
+    DBI,
+    ggplot2,
+    htmltools,
+    knitr,
+    patchwork,
+    processx,
+    rmarkdown,
+    RSQLite,
+    shiny,
+    shinytest2,
+    testthat (>= 3.0.0),
+    viridisLite,
+    withr
+Config/testthat/edition: 3
+VignetteBuilder: knitr
+Config/roxygen2/version: 8.0.0
