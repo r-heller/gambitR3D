@@ -84,3 +84,36 @@ test_that("knight and pawn patterns across levels; pawn captures only diagonally
   ), has_moved = c(FALSE, TRUE, TRUE, TRUE, TRUE, TRUE)))
   expect_identical(dests_of(st, "wP"), sort(c("N:1:0", "N:0:0", "N:2:0")))
 })
+
+test_that("bishop and queen rays cross boards and stop at an occupied coordinate", {
+  # Bishop/queen on N:c4 (N:1:1), kings out of the way.
+  kings <- c("wK K white WK:1:0", "bK K black BK:1:1")
+  # Diagonals: d5 and e6 exist on N and B, f7 nowhere; b5 on N and B, a6
+  # nowhere; d3 on N and W, e2 on W, f1 on WK; b3 on W and N, a2 nowhere.
+  bishop <- c("N:2:2", "B:2:0", "N:3:3", "B:3:1", "N:0:2", "B:0:0",
+              "W:2:2", "N:2:0", "W:3:1", "WK:1:1", "W:0:2", "N:0:0")
+  # Files and ranks: c5..c8, c3..c1, d4 e4, b4 (c9, f4, a4, c0 do not exist).
+  rook <- c("N:1:2", "B:1:0", "N:1:3", "B:1:1", "B:1:2", "B:1:3", "W:1:2", "N:1:0",
+            "W:1:1", "W:1:0", "W:2:3", "N:2:1", "W:3:3", "N:3:1", "W:0:3", "N:0:1")
+  for (engine in c("cpp", "r")) {
+    withr::local_options(gambitR3D.engine = engine)
+    st <- g3_setup_position(pcs("wB B white N:1:1", kings))
+    expect_identical(dests_of(st, "wB"), sort(bishop), info = engine)
+    # An own pawn on W:d3 blocks the coordinate d3 beyond N:d3, so e2 and
+    # f1 are unreachable; an enemy pawn on W:c4 (the source coordinate on
+    # another board) blocks nothing.
+    st <- g3_setup_position(pcs("wB B white N:1:1", kings, "wP P white W:2:2", "bP P black W:1:3"))
+    expect_identical(dests_of(st, "wB"),
+                     sort(c("N:2:2", "B:2:0", "N:3:3", "B:3:1", "N:0:2", "B:0:0", "N:2:0", "W:0:2", "N:0:0")),
+                     info = engine)
+    st <- g3_setup_position(pcs("wQ Q white N:1:1", kings))
+    expect_identical(dests_of(st, "wQ"), sort(c(bishop, rook)), info = engine)
+    # An enemy pawn on N:c6 is captured; B:c6 is still a destination and
+    # the ray stops after c6.
+    st <- g3_setup_position(pcs("wQ Q white N:1:1", kings, "bP P black N:1:3"))
+    expect_identical(dests_of(st, "wQ"), sort(setdiff(c(bishop, rook), c("B:1:2", "B:1:3"))), info = engine)
+    a <- g3_legal_actions(st)
+    expect_identical(a$capture_id[a$action_id == "m:N:1:1-N:1:3"], "bP")
+    expect_true(is.na(a$capture_id[a$action_id == "m:N:1:1-B:1:1"]))
+  }
+})

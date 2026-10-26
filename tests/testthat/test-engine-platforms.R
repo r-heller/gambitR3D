@@ -117,3 +117,19 @@ test_that("transport keeps the physical square and changes the projection", {
   co <- .g3_square_coords(core$dock, core$orient, tabs)
   expect_identical(.g3_coord_label(co$file[49L], co$rank[49L]), "b7")
 })
+
+test_that("a platform transport can give check, and every reply escapes it", {
+  # WQ carries its rook from W:L:lo to N:L:lo turned 180 degrees; the rook
+  # lands on b3 and checks the black king on B:b8 up the empty b-file.
+  st <- g3_setup_position(pcs("wR R white WQ:0:0", "wK K white W:3:0", "bK K black B:0:3", "bN N black N:3:3"))
+  for (engine in c("cpp", "r")) {
+    withr::local_options(gambitR3D.engine = engine)
+    step <- g3_apply_action(st, "t:WQ>N:L:lo@180")
+    expect_true(isTRUE(step$event$check), info = engine)
+    expect_match(step$event$notation, "\\+$", info = engine)
+    # Only king moves off the b-file escape: c7, c8, a8 and a9 (b7 and b9
+    # stay on the file; the knight on N:e6 can neither block nor capture).
+    replies <- g3_legal_actions(step$state)$action_id
+    expect_setequal(replies, c("m:B:0:3-B:1:2", "m:B:0:3-B:1:3", "m:B:0:3-BQ:0:0", "m:B:0:3-BQ:0:1"))
+  }
+})
