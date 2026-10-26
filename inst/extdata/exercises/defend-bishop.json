@@ -1,0 +1,298 @@
+{
+  "schema": "g3-exercise/1",
+  "exercise_id": "954877ff4f5fe4aada8a1c15f693df877ae0350f10becd95bc80b0dbfcabb43e",
+  "version": 1,
+  "theme": "defend",
+  "objective": {
+    "theme": "defend",
+    "criterion": "keep_piece",
+    "side": "white",
+    "params": {
+      "piece_id": "wB"
+    }
+  },
+  "grading": {
+    "basis": "searched",
+    "tolerance": 50,
+    "budget": {
+      "nodes": 2000,
+      "time_ms": null,
+      "depth": 3
+    },
+    "depth": 2,
+    "nodes": 2001,
+    "completeness": "partial",
+    "pv": ["m:W:1:2-WQ:0:1", "m:N:1:3-W:1:0"]
+  },
+  "start_state": {
+    "schema_version": "g3-state/1",
+    "rules_version": "experimental-v0.1",
+    "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+    "boards": [
+      {
+        "id": "W",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "N",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "B",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "WQ",
+        "type": "platform",
+        "dock": "W:L:lo",
+        "orientation": 0
+      },
+      {
+        "id": "WK",
+        "type": "platform",
+        "dock": "W:R:lo",
+        "orientation": 0
+      },
+      {
+        "id": "BQ",
+        "type": "platform",
+        "dock": "B:L:hi",
+        "orientation": 0
+      },
+      {
+        "id": "BK",
+        "type": "platform",
+        "dock": "B:R:hi",
+        "orientation": 0
+      }
+    ],
+    "pieces": [
+      {
+        "id": "wB",
+        "type": "B",
+        "origin_type": "B",
+        "color": "white",
+        "square_id": "W:1:2",
+        "has_moved": true
+      },
+      {
+        "id": "wP",
+        "type": "P",
+        "origin_type": "P",
+        "color": "white",
+        "square_id": "W:3:1",
+        "has_moved": true
+      },
+      {
+        "id": "wK",
+        "type": "K",
+        "origin_type": "K",
+        "color": "white",
+        "square_id": "WK:0:0",
+        "has_moved": true
+      },
+      {
+        "id": "bR",
+        "type": "R",
+        "origin_type": "R",
+        "color": "black",
+        "square_id": "N:1:3",
+        "has_moved": true
+      },
+      {
+        "id": "bK",
+        "type": "K",
+        "origin_type": "K",
+        "color": "black",
+        "square_id": "B:3:3",
+        "has_moved": true
+      }
+    ],
+    "side": "white",
+    "rights": {
+      "castling": {
+        "white_kingside": false,
+        "white_queenside": false,
+        "black_kingside": false,
+        "black_queenside": false
+      },
+      "first_turn_completed": {
+        "white": true,
+        "black": true
+      }
+    },
+    "ep": null,
+    "ply": 0,
+    "clocks": {
+      "halfmove": 0
+    },
+    "repetition": {
+      "keys": [
+        "69296e01adc5f7c373adc52ea633408eb558205d9bf3df61189853d0c352a722"
+      ]
+    },
+    "outcome": {
+      "status": "ongoing",
+      "result": null,
+      "reason": null
+    }
+  },
+  "start_state_hash": "ec78fdbb3880c82564fa1a8f0b2212ea98347a38ea07770b2eb2d59272bc5387",
+  "position_key": "69296e01adc5f7c373adc52ea633408eb558205d9bf3df61189853d0c352a722",
+  "rules_version": "experimental-v0.1",
+  "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+  "solutions": [
+    {
+      "action_id": "m:W:1:2-B:3:0",
+      "label": "B W:c3-B:e5",
+      "grade": "solved",
+      "basis": "searched",
+      "reason": "keeps_piece",
+      "score": -107
+    },
+    {
+      "action_id": "m:W:1:2-N:0:1",
+      "label": "B W:c3-N:b4",
+      "grade": "solved",
+      "basis": "searched",
+      "reason": "keeps_piece",
+      "score": -107
+    },
+    {
+      "action_id": "m:W:1:2-N:2:1",
+      "label": "B W:c3-N:d4",
+      "grade": "solved",
+      "basis": "searched",
+      "reason": "keeps_piece",
+      "score": -107
+    },
+    {
+      "action_id": "m:W:1:2-N:3:2",
+      "label": "B W:c3-N:e5",
+      "grade": "solved",
+      "basis": "searched",
+      "reason": "keeps_piece",
+      "score": -107
+    },
+    {
+      "action_id": "m:W:1:2-W:0:1",
+      "label": "B W:c3-W:b2",
+      "grade": "solved",
+      "basis": "searched",
+      "reason": "keeps_piece",
+      "score": -118
+    },
+    {
+      "action_id": "m:W:1:2-W:0:3",
+      "label": "B W:c3-W:b4",
+      "grade": "solved",
+      "basis": "searched",
+      "reason": "keeps_piece",
+      "score": -107
+    },
+    {
+      "action_id": "m:W:1:2-W:2:1",
+      "label": "B W:c3-W:d2",
+      "grade": "solved",
+      "basis": "searched",
+      "reason": "keeps_piece",
+      "score": -106
+    },
+    {
+      "action_id": "m:W:1:2-W:2:3",
+      "label": "B W:c3-W:d4",
+      "grade": "solved",
+      "basis": "searched",
+      "reason": "keeps_piece",
+      "score": -107
+    },
+    {
+      "action_id": "m:W:1:2-W:3:0",
+      "label": "B W:c3-W:e1",
+      "grade": "solved",
+      "basis": "searched",
+      "reason": "keeps_piece",
+      "score": -131
+    },
+    {
+      "action_id": "m:W:1:2-WK:0:1",
+      "label": "B W:c3-WK:e1",
+      "grade": "acceptable",
+      "basis": "searched",
+      "reason": "keeps_piece",
+      "score": -163
+    },
+    {
+      "action_id": "m:W:1:2-WK:1:0",
+      "label": "B W:c3-WK:f0",
+      "grade": "acceptable",
+      "basis": "searched",
+      "reason": "keeps_piece",
+      "score": -163
+    },
+    {
+      "action_id": "m:W:1:2-WQ:0:1",
+      "label": "B W:c3-WQ:a1",
+      "grade": "solved",
+      "basis": "searched",
+      "reason": "keeps_piece",
+      "score": -91
+    }
+  ],
+  "primary_action_id": "m:W:1:2-WQ:0:1",
+  "continuation": {
+    "actions": ["m:W:1:2-WQ:0:1", "m:N:1:3-W:1:0"],
+    "notation": ["B W:c3-WQ:a1", "R N:c6-W:c1"],
+    "verified": true,
+    "verified_with": "g3_apply_action",
+    "kind": "analysed_line",
+    "depth": 2,
+    "budget": {
+      "nodes": 2000,
+      "time_ms": null,
+      "depth": 3
+    },
+    "final_state_hash": "6cba43c06a871966c7222eef8a2dfa901627fbd12832f33cb02c650c5db40554",
+    "ends_game": false,
+    "outcome": {
+      "status": "ongoing",
+      "result": null,
+      "reason": null
+    }
+  },
+  "status": "validated",
+  "validation": {
+    "method": "exhaustive_criterion",
+    "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+    "checked": "2026-10-26T21:03:11.589Z",
+    "n_legal": 23,
+    "n_solved": 10,
+    "n_acceptable": 2,
+    "n_incorrect": 11,
+    "discriminating": true,
+    "unique_solution_proven": false,
+    "grading_basis": "searched",
+    "status_reason": "criterion checked for every legal action"
+  },
+  "provenance": {
+    "source": "authored",
+    "label": "authored, engine-verified",
+    "game_id": null,
+    "game_hash": null,
+    "ply": null,
+    "played_action_id": null,
+    "definition_id": "defend-bishop",
+    "title": "Save the bishop",
+    "note": null,
+    "generator": "g3-coach/1",
+    "engine": "g3-search/1",
+    "evaluator": "g3-eval/1",
+    "created": "2026-10-26T21:03:11.589Z"
+  }
+}

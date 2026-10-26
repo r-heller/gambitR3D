@@ -24,7 +24,8 @@
   self_play = ".g3_job_self_play",
   training = ".g3_job_training",
   evaluation = ".g3_job_evaluation",
-  export = ".g3_job_export"
+  export = ".g3_job_export",
+  coach = ".g3_job_coach"
 )
 .G3_JOB_TERMINAL <- c("succeeded", "cancelled", "timed_out", "failed", "blocked", "interrupted")
 
@@ -41,7 +42,7 @@
 #' resumable job.
 #'
 #' @param spec A list with `type` (one of `"search"`, `"analysis"`,
-#'   `"match"`, `"self_play"`, `"training"`, `"evaluation"`, `"export"`),
+#'   `"match"`, `"self_play"`, `"training"`, `"evaluation"`, `"export"`, `"coach"`),
 #'   `args` (a list passed to the job function), and optional `limits`
 #'   (`wall_seconds`, default 600), `seed`, `job_dir` (default under
 #'   `tools::R_user_dir("gambitR3D", "data")`) and `label`.

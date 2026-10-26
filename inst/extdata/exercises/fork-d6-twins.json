@@ -1,0 +1,208 @@
+{
+  "schema": "g3-exercise/1",
+  "exercise_id": "3cb3287a00b78610f2024e94616231f0388e61011f56ad692ea8eb18bb8c2933",
+  "version": 1,
+  "theme": "fork",
+  "objective": {
+    "theme": "fork",
+    "criterion": "fork",
+    "side": "white",
+    "params": []
+  },
+  "grading": {
+    "basis": "exact",
+    "tolerance": 50,
+    "budget": {
+      "nodes": 2000,
+      "time_ms": null,
+      "depth": 3
+    },
+    "depth": null,
+    "nodes": null,
+    "completeness": null,
+    "pv": []
+  },
+  "start_state": {
+    "schema_version": "g3-state/1",
+    "rules_version": "experimental-v0.1",
+    "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+    "boards": [
+      {
+        "id": "W",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "N",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "B",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "WQ",
+        "type": "platform",
+        "dock": "W:L:lo",
+        "orientation": 0
+      },
+      {
+        "id": "WK",
+        "type": "platform",
+        "dock": "W:R:lo",
+        "orientation": 0
+      },
+      {
+        "id": "BQ",
+        "type": "platform",
+        "dock": "B:L:hi",
+        "orientation": 0
+      },
+      {
+        "id": "BK",
+        "type": "platform",
+        "dock": "B:R:hi",
+        "orientation": 0
+      }
+    ],
+    "pieces": [
+      {
+        "id": "wN",
+        "type": "N",
+        "origin_type": "N",
+        "color": "white",
+        "square_id": "W:3:3",
+        "has_moved": true
+      },
+      {
+        "id": "wK",
+        "type": "K",
+        "origin_type": "K",
+        "color": "white",
+        "square_id": "WK:0:0",
+        "has_moved": true
+      },
+      {
+        "id": "bK",
+        "type": "K",
+        "origin_type": "K",
+        "color": "black",
+        "square_id": "B:3:3",
+        "has_moved": true
+      },
+      {
+        "id": "bR",
+        "type": "R",
+        "origin_type": "R",
+        "color": "black",
+        "square_id": "B:1:3",
+        "has_moved": true
+      }
+    ],
+    "side": "white",
+    "rights": {
+      "castling": {
+        "white_kingside": false,
+        "white_queenside": false,
+        "black_kingside": false,
+        "black_queenside": false
+      },
+      "first_turn_completed": {
+        "white": true,
+        "black": true
+      }
+    },
+    "ep": null,
+    "ply": 0,
+    "clocks": {
+      "halfmove": 0
+    },
+    "repetition": {
+      "keys": [
+        "38f4629f04f6a45b365fa548df203a35c3b474a3985344f45379bb79e8f32d24"
+      ]
+    },
+    "outcome": {
+      "status": "ongoing",
+      "result": null,
+      "reason": null
+    }
+  },
+  "start_state_hash": "fe82d80ceab959c26885b766a13f9453f31a70c19795ec2c3f8d772ba0ed5e64",
+  "position_key": "38f4629f04f6a45b365fa548df203a35c3b474a3985344f45379bb79e8f32d24",
+  "rules_version": "experimental-v0.1",
+  "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+  "solutions": [
+    {
+      "action_id": "m:W:3:3-B:2:1",
+      "label": "N W:e4-B:d6",
+      "grade": "solved",
+      "basis": "exact",
+      "reason": "fork",
+      "score": null
+    },
+    {
+      "action_id": "m:W:3:3-N:2:3",
+      "label": "N W:e4-N:d6",
+      "grade": "solved",
+      "basis": "exact",
+      "reason": "fork",
+      "score": null
+    }
+  ],
+  "primary_action_id": "m:W:3:3-B:2:1",
+  "continuation": {
+    "actions": ["m:W:3:3-B:2:1", "m:B:3:3-B:2:2", "m:B:2:1-B:1:3"],
+    "notation": ["N W:e4-B:d6+", "K B:e8-B:d7", "N B:d6xB:c8"],
+    "verified": true,
+    "verified_with": "g3_apply_action",
+    "kind": "analysed_line",
+    "depth": 3,
+    "budget": {
+      "nodes": 2000,
+      "time_ms": null,
+      "depth": 3
+    },
+    "final_state_hash": "360af499df6a7938ee898615011ed7ef4b3d2ac62cacb848f74e6e316ad76066",
+    "ends_game": false,
+    "outcome": {
+      "status": "ongoing",
+      "result": null,
+      "reason": null
+    }
+  },
+  "status": "validated",
+  "validation": {
+    "method": "exhaustive_criterion",
+    "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+    "checked": "2026-10-26T21:03:11.410Z",
+    "n_legal": 16,
+    "n_solved": 2,
+    "n_acceptable": 0,
+    "n_incorrect": 14,
+    "discriminating": true,
+    "unique_solution_proven": false,
+    "grading_basis": "exact",
+    "status_reason": "criterion checked for every legal action"
+  },
+  "provenance": {
+    "source": "authored",
+    "label": "authored, engine-verified",
+    "game_id": null,
+    "game_hash": null,
+    "ply": null,
+    "played_action_id": null,
+    "definition_id": "fork-d6-twins",
+    "title": "Knight fork on d6",
+    "note": null,
+    "generator": "g3-coach/1",
+    "engine": "g3-search/1",
+    "evaluator": "g3-eval/1",
+    "created": "2026-10-26T21:03:11.410Z"
+  }
+}

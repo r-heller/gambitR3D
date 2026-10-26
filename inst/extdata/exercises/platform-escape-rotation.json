@@ -1,0 +1,360 @@
+{
+  "schema": "g3-exercise/1",
+  "exercise_id": "1dbfc7b62501501a6739f1468d48250bd278cabe65b1ce7c5a7ffb46df7f13bc",
+  "version": 1,
+  "theme": "platform",
+  "objective": {
+    "theme": "platform",
+    "criterion": "platform_escape",
+    "side": "white",
+    "params": []
+  },
+  "grading": {
+    "basis": "exact",
+    "tolerance": 50,
+    "budget": {
+      "nodes": 2000,
+      "time_ms": null,
+      "depth": 3
+    },
+    "depth": null,
+    "nodes": null,
+    "completeness": null,
+    "pv": []
+  },
+  "start_state": {
+    "schema_version": "g3-state/1",
+    "rules_version": "experimental-v0.1",
+    "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+    "boards": [
+      {
+        "id": "W",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "N",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "B",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "WQ",
+        "type": "platform",
+        "dock": "N:L:lo",
+        "orientation": 180
+      },
+      {
+        "id": "WK",
+        "type": "platform",
+        "dock": "W:R:hi",
+        "orientation": 180
+      },
+      {
+        "id": "BQ",
+        "type": "platform",
+        "dock": "B:L:hi",
+        "orientation": 0
+      },
+      {
+        "id": "BK",
+        "type": "platform",
+        "dock": "B:R:hi",
+        "orientation": 0
+      }
+    ],
+    "pieces": [
+      {
+        "id": "wPb2",
+        "type": "P",
+        "origin_type": "P",
+        "color": "white",
+        "square_id": "W:0:3",
+        "has_moved": true
+      },
+      {
+        "id": "wPb1",
+        "type": "P",
+        "origin_type": "P",
+        "color": "white",
+        "square_id": "WQ:1:1",
+        "has_moved": true
+      },
+      {
+        "id": "wK",
+        "type": "K",
+        "origin_type": "K",
+        "color": "white",
+        "square_id": "WK:1:1",
+        "has_moved": true
+      },
+      {
+        "id": "bNb8",
+        "type": "N",
+        "origin_type": "N",
+        "color": "black",
+        "square_id": "B:0:3",
+        "has_moved": false
+      },
+      {
+        "id": "bBd8",
+        "type": "B",
+        "origin_type": "B",
+        "color": "black",
+        "square_id": "B:2:3",
+        "has_moved": false
+      },
+      {
+        "id": "bPb7",
+        "type": "P",
+        "origin_type": "P",
+        "color": "black",
+        "square_id": "B:0:0",
+        "has_moved": true
+      },
+      {
+        "id": "bPc7",
+        "type": "P",
+        "origin_type": "P",
+        "color": "black",
+        "square_id": "B:0:1",
+        "has_moved": true
+      },
+      {
+        "id": "bPe7",
+        "type": "P",
+        "origin_type": "P",
+        "color": "black",
+        "square_id": "N:2:3",
+        "has_moved": true
+      },
+      {
+        "id": "bQ",
+        "type": "Q",
+        "origin_type": "Q",
+        "color": "black",
+        "square_id": "W:1:1",
+        "has_moved": true
+      },
+      {
+        "id": "bPa8",
+        "type": "P",
+        "origin_type": "P",
+        "color": "black",
+        "square_id": "B:0:2",
+        "has_moved": true
+      },
+      {
+        "id": "bPb8",
+        "type": "P",
+        "origin_type": "P",
+        "color": "black",
+        "square_id": "BQ:1:0",
+        "has_moved": false
+      },
+      {
+        "id": "bK",
+        "type": "K",
+        "origin_type": "K",
+        "color": "black",
+        "square_id": "B:3:3",
+        "has_moved": true
+      },
+      {
+        "id": "bRf9",
+        "type": "R",
+        "origin_type": "R",
+        "color": "black",
+        "square_id": "BK:0:1",
+        "has_moved": true
+      },
+      {
+        "id": "bPe8",
+        "type": "P",
+        "origin_type": "P",
+        "color": "black",
+        "square_id": "BK:0:0",
+        "has_moved": false
+      },
+      {
+        "id": "bPf8",
+        "type": "P",
+        "origin_type": "P",
+        "color": "black",
+        "square_id": "BK:1:0",
+        "has_moved": false
+      }
+    ],
+    "side": "white",
+    "rights": {
+      "castling": {
+        "white_kingside": false,
+        "white_queenside": false,
+        "black_kingside": false,
+        "black_queenside": false
+      },
+      "first_turn_completed": {
+        "white": true,
+        "black": true
+      }
+    },
+    "ep": null,
+    "ply": 0,
+    "clocks": {
+      "halfmove": 0
+    },
+    "repetition": {
+      "keys": [
+        "cdf492901e05c8fb47e759b0f49cbaac4b727b5ab0dfd0c96448a382e42f8f2b"
+      ]
+    },
+    "outcome": {
+      "status": "ongoing",
+      "result": null,
+      "reason": null
+    }
+  },
+  "start_state_hash": "9044bfa5a0a28d5d11ea4fb25707123b9d91eed75a84af9288149c1c944d33c7",
+  "position_key": "cdf492901e05c8fb47e759b0f49cbaac4b727b5ab0dfd0c96448a382e42f8f2b",
+  "rules_version": "experimental-v0.1",
+  "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+  "solutions": [
+    {
+      "action_id": "m:WK:1:1-B:2:0",
+      "label": "K WK:e4-B:d5",
+      "grade": "acceptable",
+      "basis": "exact",
+      "reason": "no_platform",
+      "score": null
+    },
+    {
+      "action_id": "m:WK:1:1-N:2:1",
+      "label": "K WK:e4-N:d4",
+      "grade": "acceptable",
+      "basis": "exact",
+      "reason": "no_platform",
+      "score": null
+    },
+    {
+      "action_id": "m:WK:1:1-N:2:2",
+      "label": "K WK:e4-N:d5",
+      "grade": "acceptable",
+      "basis": "exact",
+      "reason": "no_platform",
+      "score": null
+    },
+    {
+      "action_id": "m:WK:1:1-N:3:0",
+      "label": "K WK:e4-N:e3",
+      "grade": "acceptable",
+      "basis": "exact",
+      "reason": "no_platform",
+      "score": null
+    },
+    {
+      "action_id": "m:WK:1:1-W:2:3",
+      "label": "K WK:e4-W:d4",
+      "grade": "acceptable",
+      "basis": "exact",
+      "reason": "no_platform",
+      "score": null
+    },
+    {
+      "action_id": "m:WK:1:1-W:3:2",
+      "label": "K WK:e4-W:e3",
+      "grade": "acceptable",
+      "basis": "exact",
+      "reason": "no_platform",
+      "score": null
+    },
+    {
+      "action_id": "m:WK:1:1-WK:0:1",
+      "label": "K WK:e4-WK:f4",
+      "grade": "acceptable",
+      "basis": "exact",
+      "reason": "no_platform",
+      "score": null
+    },
+    {
+      "action_id": "t:WK>N:R:hi@0",
+      "label": "WK(K) to N:R:hi",
+      "grade": "solved",
+      "basis": "exact",
+      "reason": "platform_escape",
+      "score": null
+    },
+    {
+      "action_id": "t:WK>N:R:lo@180",
+      "label": "WK(K) to N:R:lo turned",
+      "grade": "solved",
+      "basis": "exact",
+      "reason": "platform_escape",
+      "score": null
+    },
+    {
+      "action_id": "t:WK>W:R:lo@180",
+      "label": "WK(K) to W:R:lo turned",
+      "grade": "solved",
+      "basis": "exact",
+      "reason": "platform_escape",
+      "score": null
+    }
+  ],
+  "primary_action_id": "t:WK>N:R:hi@0",
+  "continuation": {
+    "actions": ["t:WK>N:R:hi@0", "m:BK:1:0-WK:0:0", "m:WK:1:1-N:2:3"],
+    "notation": ["WK(K) to N:R:hi", "P BK:f8-WK:f7+", "K WK:e6xN:d6"],
+    "verified": true,
+    "verified_with": "g3_apply_action",
+    "kind": "analysed_line",
+    "depth": 3,
+    "budget": {
+      "nodes": 2000,
+      "time_ms": null,
+      "depth": 3
+    },
+    "final_state_hash": "bdfeedd183272d69c2e751a564a1dacf9b703f9dae353979f2856c845ef86f7e",
+    "ends_game": false,
+    "outcome": {
+      "status": "ongoing",
+      "result": null,
+      "reason": null
+    }
+  },
+  "status": "validated",
+  "validation": {
+    "method": "exhaustive_criterion",
+    "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+    "checked": "2026-10-26T21:03:11.290Z",
+    "n_legal": 11,
+    "n_solved": 3,
+    "n_acceptable": 7,
+    "n_incorrect": 1,
+    "discriminating": true,
+    "unique_solution_proven": false,
+    "grading_basis": "exact",
+    "status_reason": "criterion checked for every legal action"
+  },
+  "provenance": {
+    "source": "authored",
+    "label": "authored, engine-verified",
+    "game_id": null,
+    "game_hash": null,
+    "ply": null,
+    "played_action_id": null,
+    "definition_id": "platform-escape-rotation",
+    "title": "Which way to turn?",
+    "note": "Position from an engine self-play game (search 150 nodes vs random, seed 26, ply 42), written out as an explicit set-up position.",
+    "generator": "g3-coach/1",
+    "engine": "g3-search/1",
+    "evaluator": "g3-eval/1",
+    "created": "2026-10-26T21:03:11.290Z"
+  }
+}

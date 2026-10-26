@@ -1,0 +1,218 @@
+{
+  "schema": "g3-exercise/1",
+  "exercise_id": "5470a6bac6a993868591c420ee419e028e17184a70298089c1c7955a825981a6",
+  "version": 1,
+  "theme": "coordinate_levels",
+  "objective": {
+    "theme": "coordinate_levels",
+    "criterion": "capture_target",
+    "side": "white",
+    "params": {
+      "target_id": "bN"
+    }
+  },
+  "grading": {
+    "basis": "exact",
+    "tolerance": 50,
+    "budget": {
+      "nodes": 2000,
+      "time_ms": null,
+      "depth": 3
+    },
+    "depth": null,
+    "nodes": null,
+    "completeness": null,
+    "pv": []
+  },
+  "start_state": {
+    "schema_version": "g3-state/1",
+    "rules_version": "experimental-v0.1",
+    "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+    "boards": [
+      {
+        "id": "W",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "N",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "B",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "WQ",
+        "type": "platform",
+        "dock": "W:L:lo",
+        "orientation": 0
+      },
+      {
+        "id": "WK",
+        "type": "platform",
+        "dock": "W:R:lo",
+        "orientation": 0
+      },
+      {
+        "id": "BQ",
+        "type": "platform",
+        "dock": "B:L:hi",
+        "orientation": 0
+      },
+      {
+        "id": "BK",
+        "type": "platform",
+        "dock": "B:R:hi",
+        "orientation": 0
+      }
+    ],
+    "pieces": [
+      {
+        "id": "wR",
+        "type": "R",
+        "origin_type": "R",
+        "color": "white",
+        "square_id": "W:2:0",
+        "has_moved": true
+      },
+      {
+        "id": "wB",
+        "type": "B",
+        "origin_type": "B",
+        "color": "white",
+        "square_id": "W:0:1",
+        "has_moved": true
+      },
+      {
+        "id": "wK",
+        "type": "K",
+        "origin_type": "K",
+        "color": "white",
+        "square_id": "WK:0:0",
+        "has_moved": true
+      },
+      {
+        "id": "bN",
+        "type": "N",
+        "origin_type": "N",
+        "color": "black",
+        "square_id": "N:2:1",
+        "has_moved": true
+      },
+      {
+        "id": "bK",
+        "type": "K",
+        "origin_type": "K",
+        "color": "black",
+        "square_id": "B:3:3",
+        "has_moved": true
+      }
+    ],
+    "side": "white",
+    "rights": {
+      "castling": {
+        "white_kingside": false,
+        "white_queenside": false,
+        "black_kingside": false,
+        "black_queenside": false
+      },
+      "first_turn_completed": {
+        "white": true,
+        "black": true
+      }
+    },
+    "ep": null,
+    "ply": 0,
+    "clocks": {
+      "halfmove": 0
+    },
+    "repetition": {
+      "keys": [
+        "5e322012feb2cfbaf09fccef88fa8d60a6948ee82c3ebb6b392ec736ce03e771"
+      ]
+    },
+    "outcome": {
+      "status": "ongoing",
+      "result": null,
+      "reason": null
+    }
+  },
+  "start_state_hash": "2c27be94273cc47373448015e95b2381478ca9b148fb22c0cfa6cf3df9af35dd",
+  "position_key": "5e322012feb2cfbaf09fccef88fa8d60a6948ee82c3ebb6b392ec736ce03e771",
+  "rules_version": "experimental-v0.1",
+  "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+  "solutions": [
+    {
+      "action_id": "m:W:0:1-N:2:1",
+      "label": "B W:b2xN:d4",
+      "grade": "solved",
+      "basis": "exact",
+      "reason": "captures_target",
+      "score": null
+    },
+    {
+      "action_id": "m:W:2:0-N:2:1",
+      "label": "R W:d1xN:d4",
+      "grade": "solved",
+      "basis": "exact",
+      "reason": "captures_target",
+      "score": null
+    }
+  ],
+  "primary_action_id": "m:W:0:1-N:2:1",
+  "continuation": {
+    "actions": ["m:W:0:1-N:2:1", "m:B:3:3-BK:0:1", "m:W:2:0-WQ:1:1"],
+    "notation": ["B W:b2xN:d4", "K B:e8-BK:e9", "R W:d1-WQ:b1"],
+    "verified": true,
+    "verified_with": "g3_apply_action",
+    "kind": "analysed_line",
+    "depth": 3,
+    "budget": {
+      "nodes": 2000,
+      "time_ms": null,
+      "depth": 3
+    },
+    "final_state_hash": "17e11fbb55be0ba4b65340ee93bba4db86a7c0385ed2affc7bad841634e39ca2",
+    "ends_game": false,
+    "outcome": {
+      "status": "ongoing",
+      "result": null,
+      "reason": null
+    }
+  },
+  "status": "validated",
+  "validation": {
+    "method": "exhaustive_criterion",
+    "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+    "checked": "2026-10-26T21:03:11.521Z",
+    "n_legal": 23,
+    "n_solved": 2,
+    "n_acceptable": 0,
+    "n_incorrect": 21,
+    "discriminating": true,
+    "unique_solution_proven": false,
+    "grading_basis": "exact",
+    "status_reason": "criterion checked for every legal action"
+  },
+  "provenance": {
+    "source": "authored",
+    "label": "authored, engine-verified",
+    "game_id": null,
+    "game_hash": null,
+    "ply": null,
+    "played_action_id": null,
+    "definition_id": "coordinate-d4-levels",
+    "title": "Which d4?",
+    "note": null,
+    "generator": "g3-coach/1",
+    "engine": "g3-search/1",
+    "evaluator": "g3-eval/1",
+    "created": "2026-10-26T21:03:11.521Z"
+  }
+}

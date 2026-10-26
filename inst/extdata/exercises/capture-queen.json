@@ -1,0 +1,224 @@
+{
+  "schema": "g3-exercise/1",
+  "exercise_id": "1c503ce08b4861fb44674dfd328c03a32eb603b802dc0c55750d8631851f2b78",
+  "version": 1,
+  "theme": "capture",
+  "objective": {
+    "theme": "capture",
+    "criterion": "safe_capture",
+    "side": "white",
+    "params": []
+  },
+  "grading": {
+    "basis": "exact",
+    "tolerance": 50,
+    "budget": {
+      "nodes": 2000,
+      "time_ms": null,
+      "depth": 3
+    },
+    "depth": null,
+    "nodes": null,
+    "completeness": null,
+    "pv": []
+  },
+  "start_state": {
+    "schema_version": "g3-state/1",
+    "rules_version": "experimental-v0.1",
+    "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+    "boards": [
+      {
+        "id": "W",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "N",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "B",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "WQ",
+        "type": "platform",
+        "dock": "W:L:lo",
+        "orientation": 0
+      },
+      {
+        "id": "WK",
+        "type": "platform",
+        "dock": "W:R:lo",
+        "orientation": 0
+      },
+      {
+        "id": "BQ",
+        "type": "platform",
+        "dock": "B:L:hi",
+        "orientation": 0
+      },
+      {
+        "id": "BK",
+        "type": "platform",
+        "dock": "B:R:hi",
+        "orientation": 0
+      }
+    ],
+    "pieces": [
+      {
+        "id": "wR",
+        "type": "R",
+        "origin_type": "R",
+        "color": "white",
+        "square_id": "W:0:0",
+        "has_moved": true
+      },
+      {
+        "id": "wK",
+        "type": "K",
+        "origin_type": "K",
+        "color": "white",
+        "square_id": "WK:0:0",
+        "has_moved": true
+      },
+      {
+        "id": "bQ",
+        "type": "Q",
+        "origin_type": "Q",
+        "color": "black",
+        "square_id": "W:0:3",
+        "has_moved": true
+      },
+      {
+        "id": "bB",
+        "type": "B",
+        "origin_type": "B",
+        "color": "black",
+        "square_id": "W:1:0",
+        "has_moved": true
+      },
+      {
+        "id": "bN",
+        "type": "N",
+        "origin_type": "N",
+        "color": "black",
+        "square_id": "W:3:0",
+        "has_moved": true
+      },
+      {
+        "id": "bK",
+        "type": "K",
+        "origin_type": "K",
+        "color": "black",
+        "square_id": "B:3:3",
+        "has_moved": true
+      }
+    ],
+    "side": "white",
+    "rights": {
+      "castling": {
+        "white_kingside": false,
+        "white_queenside": false,
+        "black_kingside": false,
+        "black_queenside": false
+      },
+      "first_turn_completed": {
+        "white": true,
+        "black": true
+      }
+    },
+    "ep": null,
+    "ply": 0,
+    "clocks": {
+      "halfmove": 0
+    },
+    "repetition": {
+      "keys": [
+        "553b3c688bf61995a8b7dfb648fe8d4f51d89a04b5e7febe3fabcec4f49436eb"
+      ]
+    },
+    "outcome": {
+      "status": "ongoing",
+      "result": null,
+      "reason": null
+    }
+  },
+  "start_state_hash": "c93c22a218954634c4c6d6991844e0d7887390f6664aec96637f6827c5cc3ada",
+  "position_key": "553b3c688bf61995a8b7dfb648fe8d4f51d89a04b5e7febe3fabcec4f49436eb",
+  "rules_version": "experimental-v0.1",
+  "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+  "solutions": [
+    {
+      "action_id": "m:W:0:0-W:0:3",
+      "label": "R W:b1xW:b4",
+      "grade": "solved",
+      "basis": "exact",
+      "reason": "safe_capture",
+      "score": null
+    },
+    {
+      "action_id": "m:W:0:0-W:1:0",
+      "label": "R W:b1xW:c1",
+      "grade": "acceptable",
+      "basis": "exact",
+      "reason": "lesser_capture",
+      "score": null
+    }
+  ],
+  "primary_action_id": "m:W:0:0-W:0:3",
+  "continuation": {
+    "actions": ["m:W:0:0-W:0:3", "m:W:3:0-W:1:1", "m:W:0:3-BQ:1:1"],
+    "notation": ["R W:b1xW:b4", "N W:e1-W:c2", "R W:b4-BQ:b9"],
+    "verified": true,
+    "verified_with": "g3_apply_action",
+    "kind": "analysed_line",
+    "depth": 3,
+    "budget": {
+      "nodes": 2000,
+      "time_ms": null,
+      "depth": 3
+    },
+    "final_state_hash": "334dae9817f3a4e2f1c5c2159d37dfe3f0dc6da188d920898049d8fb0dab4ac0",
+    "ends_game": false,
+    "outcome": {
+      "status": "ongoing",
+      "result": null,
+      "reason": null
+    }
+  },
+  "status": "validated",
+  "validation": {
+    "method": "exhaustive_criterion",
+    "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+    "checked": "2026-10-26T21:03:11.466Z",
+    "n_legal": 13,
+    "n_solved": 1,
+    "n_acceptable": 1,
+    "n_incorrect": 11,
+    "discriminating": true,
+    "unique_solution_proven": false,
+    "grading_basis": "exact",
+    "status_reason": "criterion checked for every legal action"
+  },
+  "provenance": {
+    "source": "authored",
+    "label": "authored, engine-verified",
+    "game_id": null,
+    "game_hash": null,
+    "ply": null,
+    "played_action_id": null,
+    "definition_id": "capture-queen",
+    "title": "The biggest safe capture",
+    "note": null,
+    "generator": "g3-coach/1",
+    "engine": "g3-search/1",
+    "evaluator": "g3-eval/1",
+    "created": "2026-10-26T21:03:11.466Z"
+  }
+}

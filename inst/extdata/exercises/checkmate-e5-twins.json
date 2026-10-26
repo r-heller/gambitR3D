@@ -1,0 +1,240 @@
+{
+  "schema": "g3-exercise/1",
+  "exercise_id": "972d9fc534e82c269dbf2612f0038428497ad17a568db7c3a69b531e2aeab2e4",
+  "version": 1,
+  "theme": "checkmate",
+  "objective": {
+    "theme": "checkmate",
+    "criterion": "checkmate",
+    "side": "black",
+    "params": []
+  },
+  "grading": {
+    "basis": "exact",
+    "tolerance": 50,
+    "budget": {
+      "nodes": 2000,
+      "time_ms": null,
+      "depth": 3
+    },
+    "depth": null,
+    "nodes": null,
+    "completeness": null,
+    "pv": []
+  },
+  "start_state": {
+    "schema_version": "g3-state/1",
+    "rules_version": "experimental-v0.1",
+    "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+    "boards": [
+      {
+        "id": "W",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "N",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "B",
+        "type": "main",
+        "dock": null,
+        "orientation": 0
+      },
+      {
+        "id": "WQ",
+        "type": "platform",
+        "dock": "W:L:lo",
+        "orientation": 0
+      },
+      {
+        "id": "WK",
+        "type": "platform",
+        "dock": "W:R:lo",
+        "orientation": 0
+      },
+      {
+        "id": "BQ",
+        "type": "platform",
+        "dock": "B:L:hi",
+        "orientation": 0
+      },
+      {
+        "id": "BK",
+        "type": "platform",
+        "dock": "B:R:hi",
+        "orientation": 0
+      }
+    ],
+    "pieces": [
+      {
+        "id": "wK",
+        "type": "K",
+        "origin_type": "K",
+        "color": "white",
+        "square_id": "WK:0:0",
+        "has_moved": true
+      },
+      {
+        "id": "bQ",
+        "type": "Q",
+        "origin_type": "Q",
+        "color": "black",
+        "square_id": "B:0:0",
+        "has_moved": true
+      },
+      {
+        "id": "bRd",
+        "type": "R",
+        "origin_type": "R",
+        "color": "black",
+        "square_id": "N:2:3",
+        "has_moved": true
+      },
+      {
+        "id": "bRf",
+        "type": "R",
+        "origin_type": "R",
+        "color": "black",
+        "square_id": "BK:1:1",
+        "has_moved": true
+      },
+      {
+        "id": "bK",
+        "type": "K",
+        "origin_type": "K",
+        "color": "black",
+        "square_id": "B:0:3",
+        "has_moved": true
+      }
+    ],
+    "side": "black",
+    "rights": {
+      "castling": {
+        "white_kingside": false,
+        "white_queenside": false,
+        "black_kingside": false,
+        "black_queenside": false
+      },
+      "first_turn_completed": {
+        "white": true,
+        "black": true
+      }
+    },
+    "ep": null,
+    "ply": 0,
+    "clocks": {
+      "halfmove": 0
+    },
+    "repetition": {
+      "keys": [
+        "b84393e1645aa2e4b164fc9a58b3a36d662f8fcb61d593653932ee54e7bfc4f2"
+      ]
+    },
+    "outcome": {
+      "status": "ongoing",
+      "result": null,
+      "reason": null
+    }
+  },
+  "start_state_hash": "3465b27a2017c53ed7ed49c7f9e303daf62fc2cae19277796b4fb92459724f54",
+  "position_key": "b84393e1645aa2e4b164fc9a58b3a36d662f8fcb61d593653932ee54e7bfc4f2",
+  "rules_version": "experimental-v0.1",
+  "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+  "solutions": [
+    {
+      "action_id": "m:B:0:0-B:3:0",
+      "label": "Q B:b5-B:e5",
+      "grade": "solved",
+      "basis": "exact",
+      "reason": "checkmate",
+      "score": null
+    },
+    {
+      "action_id": "m:B:0:0-B:3:3",
+      "label": "Q B:b5-B:e8",
+      "grade": "solved",
+      "basis": "exact",
+      "reason": "checkmate",
+      "score": null
+    },
+    {
+      "action_id": "m:B:0:0-BK:0:0",
+      "label": "Q B:b5-BK:e8",
+      "grade": "solved",
+      "basis": "exact",
+      "reason": "checkmate",
+      "score": null
+    },
+    {
+      "action_id": "m:B:0:0-N:3:2",
+      "label": "Q B:b5-N:e5",
+      "grade": "solved",
+      "basis": "exact",
+      "reason": "checkmate",
+      "score": null
+    },
+    {
+      "action_id": "m:B:0:0-WK:1:1",
+      "label": "Q B:b5-WK:f1",
+      "grade": "solved",
+      "basis": "exact",
+      "reason": "checkmate",
+      "score": null
+    }
+  ],
+  "primary_action_id": "m:B:0:0-B:3:0",
+  "continuation": {
+    "actions": "m:B:0:0-B:3:0",
+    "notation": "Q B:b5-B:e5#",
+    "verified": true,
+    "verified_with": "g3_apply_action",
+    "kind": "single_action",
+    "depth": null,
+    "budget": {
+      "nodes": 2000,
+      "time_ms": null,
+      "depth": 3
+    },
+    "final_state_hash": "4e82cc12a94d12eff5ca1a05643a82fcdbe6d767a6e693aebf673b8e497baf92",
+    "ends_game": true,
+    "outcome": {
+      "status": "terminal",
+      "result": "black",
+      "reason": "checkmate"
+    }
+  },
+  "status": "validated",
+  "validation": {
+    "method": "exhaustive_criterion",
+    "rules_hash": "a53ea041b3cf5a437160d1451bb720928133287140b2d250a5f1f1fa453c6c98",
+    "checked": "2026-10-26T21:03:10.734Z",
+    "n_legal": 61,
+    "n_solved": 5,
+    "n_acceptable": 0,
+    "n_incorrect": 56,
+    "discriminating": true,
+    "unique_solution_proven": false,
+    "grading_basis": "exact",
+    "status_reason": "criterion checked for every legal action"
+  },
+  "provenance": {
+    "source": "authored",
+    "label": "authored, engine-verified",
+    "game_id": null,
+    "game_hash": null,
+    "ply": null,
+    "played_action_id": null,
+    "definition_id": "checkmate-e5-twins",
+    "title": "Mate on either e5",
+    "note": null,
+    "generator": "g3-coach/1",
+    "engine": "g3-search/1",
+    "evaluator": "g3-eval/1",
+    "created": "2026-10-26T21:03:10.734Z"
+  }
+}
