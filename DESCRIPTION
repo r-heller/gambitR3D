@@ -22,16 +22,17 @@ Language: en-GB
 Roxygen: list(markdown = TRUE)
 Depends: R (>= 4.1.0)
 Imports:
+    DBI,
     digest,
     jsonlite,
     Rcpp,
+    RSQLite,
     stats,
     tools,
     utils
 Suggests:
     bslib,
     callr,
-    DBI,
     ggplot2,
     htmltools,
     knitr,
@@ -39,7 +40,6 @@ Suggests:
     pkgload,
     processx,
     rmarkdown,
-    RSQLite,
     shiny,
     shinytest2,
     testthat (>= 3.0.0),
