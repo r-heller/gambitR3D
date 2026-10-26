@@ -24,10 +24,14 @@
   self_play = ".g3_job_self_play",
   training = ".g3_job_training",
   evaluation = ".g3_job_evaluation",
-  export = ".g3_job_export",
   coach = ".g3_job_coach"
 )
 .G3_JOB_TERMINAL <- c("succeeded", "cancelled", "timed_out", "failed", "blocked", "interrupted")
+
+# Seconds a job may run past its wall limit before the worker's own time
+# limit fires; the controller terminates it 10 s after that.
+#' @noRd
+.g3_job_grace <- function(wall) max(5, 0.1 * wall)
 
 #' @noRd
 .g3_jobs_root <- function() {
@@ -42,10 +46,14 @@
 #' resumable job.
 #'
 #' @param spec A list with `type` (one of `"search"`, `"analysis"`,
-#'   `"match"`, `"self_play"`, `"training"`, `"evaluation"`, `"export"`, `"coach"`),
+#'   `"match"`, `"self_play"`, `"training"`, `"evaluation"`, `"coach"`),
 #'   `args` (a list passed to the job function), and optional `limits`
-#'   (`wall_seconds`, default 600), `seed`, `job_dir` (default under
-#'   `tools::R_user_dir("gambitR3D", "data")`) and `label`.
+#'   (`wall_seconds`, a finite positive number, default 600), `seed`,
+#'   `job_dir` (default under `tools::R_user_dir("gambitR3D", "data")`) and
+#'   `label`. Jobs stop themselves at the limit; a job still running after
+#'   the limit plus a grace period (10 %, at least 5 s) is stopped by the
+#'   worker's time limit, and one still alive 10 s after that is terminated
+#'   by [g3_job_status()] and reported as `"timed_out"`.
 #' @return A `g3_job` handle: `job_id`, `attempt`, `dir`, `type` and the
 #'   process handle (valid only in the starting session).
 #' @examples
@@ -66,8 +74,9 @@ g3_start_job <- function(spec) {
     .g3_abort("g3_io_error", "Background jobs need the 'callr' package: install.packages('callr').")
   }
   limits <- utils::modifyList(list(wall_seconds = 600), spec$limits %||% list())
-  if (!is.numeric(limits$wall_seconds) || limits$wall_seconds <= 0) {
-    .g3_abort("g3_budget_exceeded", "limits$wall_seconds must be positive.")
+  w <- limits$wall_seconds
+  if (!is.numeric(w) || length(w) != 1L || is.na(w) || !is.finite(w) || w <= 0) {
+    .g3_abort("g3_budget_exceeded", "limits$wall_seconds must be one finite positive number of seconds.")
   }
   root <- spec$job_dir %||% .g3_jobs_root()
   dir.create(root, recursive = TRUE, showWarnings = FALSE)
@@ -192,11 +201,18 @@ g3_start_job <- function(spec) {
     return(finish("blocked", "not_implemented", paste0("Job type '", job$type, "' is not available in this build.")))
   }
   args <- readRDS(file.path(dir, "args.rds"))
+  # Backstop for job code that does not check ctx$should_stop() often
+  # enough: R's elapsed-time limit interrupts it after the grace period.
+  setTimeLimit(elapsed = wall + .g3_job_grace(wall) - ctx$elapsed(), transient = FALSE)
   out <- tryCatch(
     fun(args, ctx),
     g3_error = function(e) structure(list(msg = conditionMessage(e), cls = class(e)[1L]), class = "g3_job_err"),
-    error = function(e) structure(list(msg = conditionMessage(e), cls = "error"), class = "g3_job_err")
+    error = function(e) structure(list(msg = conditionMessage(e), cls = "error"), class = "g3_job_err"),
+    finally = setTimeLimit(elapsed = Inf)
   )
+  if (inherits(out, "g3_job_err") && ctx$timed_out()) {
+    return(finish("timed_out", "timed_out", out$msg))
+  }
   if (inherits(out, "g3_job_err")) {
     if (out$cls == "g3_incompatible_model") return(finish("blocked", "prerequisite_missing", out$msg))
     return(finish("failed", "error", out$msg))
@@ -235,6 +251,7 @@ g3_job_status <- function(job) {
     } else {
       TRUE
     }
+    if (alive) st <- .g3_enforce_deadline(job, dir, st)
     if (!alive) {
       # Give the worker's final atomic write a moment, then re-read.
       Sys.sleep(0.05)
@@ -245,6 +262,35 @@ g3_job_status <- function(job) {
         .g3_write_status(dir, st)
       }
     }
+  }
+  st
+}
+
+# Terminates a job that is still running 10 s after its worker's own time
+# limit should have stopped it (wall limit plus grace).
+#' @noRd
+.g3_enforce_deadline <- function(job, dir, st) {
+  if (!identical(st$status, "running") || is.null(st$started) || is.na(st$started)) return(st)
+  wall <- tryCatch(jsonlite::fromJSON(file.path(dir, "job.json"))$limits$wall_seconds,
+                   error = function(e) NULL)
+  if (!is.numeric(wall) || length(wall) != 1L || !is.finite(wall)) return(st)
+  started <- as.POSIXct(st$started, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC")
+  if (is.na(started)) return(st)
+  over <- as.numeric(difftime(Sys.time(), started, units = "secs")) - (wall + .g3_job_grace(wall) + 10)
+  if (over <= 0) return(st)
+  proc <- if (inherits(job, "g3_job")) job$process else NULL
+  if (!is.null(proc)) {
+    if (proc$is_alive()) proc$kill_tree()
+    proc$wait(3000)
+  } else if (!is.na(st$pid %||% NA) && .g3_pid_alive(st$pid)) {
+    tools::pskill(st$pid, tools::SIGKILL)
+  }
+  st <- .g3_read_status(dir)
+  if (st$status %in% c("running", "queued")) {
+    st$status <- "timed_out"
+    st$stop_reason <- "terminated_after_deadline"
+    st$ended <- .g3_now()
+    .g3_write_status(dir, st)
   }
   st
 }
