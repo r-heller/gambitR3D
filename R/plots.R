@@ -740,7 +740,17 @@ g3_plot_comparison <- function(x, metric = "score") {
     summ <- rbind(data.frame(agent = co$agent, value = co$latency_median_ms, stat = "median"),
                   data.frame(agent = co$agent, value = co$latency_p95_ms, stat = "95th percentile"))
     summ$agent <- factor(summ$agent, levels = lv)
-    p <- ggplot2::ggplot(dd, ggplot2::aes(x = .data$latency_ms, y = .data$agent)) +
+    # A log scale cannot show 0 ms, which coarse clocks (Windows) report for
+    # fast decisions: such values are drawn at the floor and counted.
+    floor_ms <- 0.1
+    n_floor <- sum(dd$latency_ms < floor_ms, na.rm = TRUE)
+    dd$latency_plot_ms <- pmax(dd$latency_ms, floor_ms)
+    summ$value <- pmax(summ$value, floor_ms)
+    if (n_floor > 0L) {
+      cap <- paste0(cap, "\n", n_floor, " decision(s) under ", floor_ms, " ms (below the clock resolution) are drawn at ",
+                    floor_ms, " ms.")
+    }
+    p <- ggplot2::ggplot(dd, ggplot2::aes(x = .data$latency_plot_ms, y = .data$agent)) +
       ggplot2::geom_point(ggplot2::aes(colour = .data$agent), position = ggplot2::position_jitter(width = 0, height = 0.15, seed = 1L),
                           alpha = 0.45, size = 1.2) +
       ggplot2::geom_point(data = summ, ggplot2::aes(x = .data$value, y = .data$agent, shape = .data$stat), size = 3.2,

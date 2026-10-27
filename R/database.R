@@ -488,8 +488,15 @@ print.g3_db <- function(x, ...) {
 
 #' @noRd
 .g3_path_in_library <- function(path) {
-  libs <- normalizePath(.libPaths(), mustWork = FALSE)
-  any(startsWith(path, paste0(libs, .Platform$file.sep)))
+  # Compare normalised forward-slash paths; the folder is normalised rather
+  # than the (possibly new) file. Windows paths are case-insensitive.
+  norm <- function(p) {
+    p <- normalizePath(p, winslash = "/", mustWork = FALSE)
+    if (.Platform$OS.type == "windows") tolower(p) else p
+  }
+  dir <- norm(dirname(path))
+  libs <- sub("/+$", "", norm(.libPaths()))
+  any(dir == libs | startsWith(dir, paste0(libs, "/")))
 }
 
 # File system type holding `dir` (Linux: /proc/self/mountinfo; Windows: UNC
