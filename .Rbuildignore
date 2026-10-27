@@ -18,3 +18,4 @@
 ^\.orchestration$
 ^dev$
 ^CONTRIBUTING\.md$
+^\.gitattributes$

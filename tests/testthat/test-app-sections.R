@@ -356,7 +356,8 @@ test_that("without a catalogue the catalogue actions are refused with the reason
     expect_false(dir.exists(file.path(dir, "imports")))
     expect_match(html_of(output$`database-sel_msg`), "Not available", fixed = TRUE)
     # The save status names the folder files really go to.
-    expect_match(html_of(output$`play-files-status`), file.path(dir, "games"), fixed = TRUE)
+    # (normalised, as the app shows it: /var is /private/var on macOS).
+    expect_match(html_of(output$`play-files-status`), file.path(normalizePath(dir), "games"), fixed = TRUE)
     session$setInputs(`settings-lang` = "de")
     expect_match(html_of(output$`database-backup_report`), "Nicht verfügbar", fixed = TRUE)
   })

@@ -1,0 +1,6 @@
+# Check out text files with LF on every platform: several files are verified
+# by SHA-256 (authored exercises, vendored three.js), and CRLF conversion on
+# Windows would change their bytes.
+* text=auto eol=lf
+*.png binary
+*.ico binary

@@ -914,7 +914,14 @@ bool rule_draw(const Core& c) {
 
 // R: order(-key, seq_len(n)); stable descending by key.
 std::vector<Act> order_moves(const Core& c, const std::vector<Act>& m, int tt_move) {
-  if (m.size() <= 1) return m;
+  std::vector<Act> out;
+  out.reserve(m.size());
+  // Element-wise copies: copy-constructing the vector here triggers a false
+  // -Wstringop-overflow warning in g++ 12/13.
+  if (m.size() <= 1) {
+    for (const Act& a : m) out.push_back(a);
+    return out;
+  }
   std::vector<std::pair<double, size_t>> k;
   for (size_t i = 0; i < m.size(); ++i) {
     const Act& a = m[i];
@@ -928,7 +935,6 @@ std::vector<Act> order_moves(const Core& c, const std::vector<Act>& m, int tt_mo
   std::stable_sort(k.begin(), k.end(), [](const std::pair<double, size_t>& a, const std::pair<double, size_t>& b) {
     return a.first > b.first;
   });
-  std::vector<Act> out;
   for (auto& kv : k) out.push_back(m[kv.second]);
   return out;
 }
