@@ -1,4 +1,4 @@
-# gambitR3D <img src="man/figures/logo.svg" align="right" height="96" alt="" />
+# gambitR3D <img src="man/figures/logo.svg" align="right" height="139" alt="gambitR3D logo" />
 
 <!-- badges: start -->
 [![R-CMD-check](https://github.com/r-heller/gambitR3D/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/r-heller/gambitR3D/actions/workflows/R-CMD-check.yaml)

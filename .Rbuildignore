@@ -20,3 +20,6 @@
 ^CONTRIBUTING\.md$
 ^\.gitattributes$
 ^\.git$
+
+^tools/branding$
+^tools/draw-logo\.R$
