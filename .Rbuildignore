@@ -1,6 +1,8 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
+^\.git$
 ^\.github$
+^\.gitattributes$
 ^_pkgdown\.ya?ml$
 ^docs$
 ^pkgdown$
@@ -18,8 +20,12 @@
 ^\.orchestration$
 ^dev$
 ^CONTRIBUTING\.md$
-^\.gitattributes$
-^\.git$
-
-^tools/branding$
-^tools/draw-logo\.R$
+^MAINTENANCE\.md$
+^ROADMAP\.md$
+^VALIDATION\.md$
+^CITATION\.cff$
+^codemeta\.json$
+^\.zenodo\.json$
+^tools$
+^revdep$
+^man/figures/logo-dark\.svg$

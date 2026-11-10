@@ -49,11 +49,9 @@
 #' @return Invisibly, the value passed to [shiny::stopApp()] when the app
 #'   stops (normally `NULL`). Called for its side effect of running the app.
 #' @examples
-#' \dontrun{
-#' # Interactive: opens a browser window; stop with Ctrl+C or Esc.
-#' gambitR3D::g3_run_app()
-#' # A separate catalogue file:
-#' gambitR3D::g3_run_app(db_path = base::file.path(base::tempdir(), "games.sqlite"))
+#' if (interactive()) {
+#'   # Opens a browser window; stop with Ctrl+C or Esc.
+#'   gambitR3D::g3_run_app(db_path = base::file.path(base::tempdir(), "games.sqlite"))
 #' }
 #' @export
 g3_run_app <- function(db_path = NULL, host = "127.0.0.1", port = NULL, launch.browser = interactive()) {

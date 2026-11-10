@@ -47,10 +47,8 @@ files when the catalogue cannot be used. Long work runs in background
 processes. All assets are bundled; the app makes no network requests.
 }
 \examples{
-\dontrun{
-# Interactive: opens a browser window; stop with Ctrl+C or Esc.
-gambitR3D::g3_run_app()
-# A separate catalogue file:
-gambitR3D::g3_run_app(db_path = base::file.path(base::tempdir(), "games.sqlite"))
+if (interactive()) {
+  # Opens a browser window; stop with Ctrl+C or Esc.
+  gambitR3D::g3_run_app(db_path = base::file.path(base::tempdir(), "games.sqlite"))
 }
 }

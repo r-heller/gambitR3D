@@ -1,6 +1,6 @@
 Package: gambitR3D
 Title: Multilevel Chess: Play, Analyse and Train
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: c(
     person("Raban", "Heller", email = "raban.heller@uni-ulm.de",
            role = c("aut", "cre"), comment = c(ORCID = "0000-0001-8006-9742")),
@@ -54,4 +54,4 @@ LinkingTo:
     Rcpp
 Config/testthat/edition: 3
 VignetteBuilder: knitr
-Config/roxygen2/version: 8.0.0
+Config/roxygen2/version: 8.1.1

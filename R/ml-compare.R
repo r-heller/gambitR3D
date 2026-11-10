@@ -33,6 +33,8 @@
 #'   play settings.
 #' @examples
 #' \dontrun{
+#' # Not run: needs the optional Python/PyTorch environment from g3_setup_ml()
+#' # and a trained checkpoint, which cannot be assumed on a check machine.
 #' cmp <- gambitR3D::g3_compare_models(
 #'   c("model:my-checkpoint", "search"), budget = base::list(nodes = 200L),
 #'   seeds = 1L, play = base::list(simulations = 16L), max_plies = 40L

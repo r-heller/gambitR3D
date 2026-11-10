@@ -61,6 +61,8 @@
 #'   `limitations`.
 #' @examples
 #' \dontrun{
+#' # Not run: needs the optional Python/PyTorch environment from g3_setup_ml()
+#' # and a trained checkpoint, which cannot be assumed on a check machine.
 #' sp <- gambitR3D::g3_self_play(
 #'   base::list(model = "model:my-checkpoint", games = 1L, max_plies = 20L, simulations = 8L),
 #'   output_dir = base::file.path(base::tempdir(), "g3-selfplay")

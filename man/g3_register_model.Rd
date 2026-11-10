@@ -33,6 +33,8 @@ different weights is refused.
 }
 \examples{
 \dontrun{
+# Not run: needs the optional Python/PyTorch environment from g3_setup_ml()
+# and a trained checkpoint, which cannot be assumed on a check machine.
 run <- gambitR3D::g3_train_model(base::list(steps = 5L), dataset, tempfile())
 m <- gambitR3D::g3_register_model(run$checkpoint$manifest)
 gambitR3D::g3_model_capabilities(m)

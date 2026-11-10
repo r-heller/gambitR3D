@@ -33,6 +33,8 @@
 #'   `manifest` (path of `export-manifest.json`).
 #' @examples
 #' \dontrun{
+#' # Not run: needs the optional Python/PyTorch environment from g3_setup_ml()
+#' # and a trained checkpoint, which cannot be assumed on a check machine.
 #' ex <- gambitR3D::g3_export_model("model:my-checkpoint",
 #'                                  base::file.path(base::tempdir(), "export"))
 #' ex$parity$passed

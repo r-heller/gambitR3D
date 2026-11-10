@@ -20,7 +20,19 @@ marked running is reported as \code{"interrupted"}.
 Status of a background job
 }
 \examples{
-\dontrun{
-gambitR3D::g3_job_status(job)$status
+# Interactive only: the job runs in a supervised background R process.
+if (interactive() && requireNamespace("callr", quietly = TRUE)) {
+  st <- gambitR3D::g3_new_game()$state
+  job <- gambitR3D::g3_start_job(base::list(
+    type = "search",
+    args = base::list(state = st, budget = base::list(nodes = 300L)),
+    job_dir = base::file.path(base::tempdir(), "g3-jobs")
+  ))
+  deadline <- Sys.time() + 30
+  while (gambitR3D::g3_job_status(job)$status \%in\% c("queued", "running") &&
+         Sys.time() < deadline) {
+    Sys.sleep(0.2)
+  }
+  gambitR3D::g3_job_status(job)$status
 }
 }

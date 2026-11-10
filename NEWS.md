@@ -1,3 +1,15 @@
+# gambitR3D 0.2.0
+
+## CRAN preparation
+
+* Examples that can run on any machine no longer use `\dontrun{}`:
+  `g3_run_app()`, `g3_start_job()` and `g3_job_status()` run in interactive
+  sessions (the jobs example runs a short background search in a temporary
+  directory). The remaining `\dontrun{}` examples need the optional
+  Python/PyTorch environment and a trained checkpoint, and now say so.
+* Added `inst/WORDLIST` for the spelling check and `cran-comments.md`.
+* The source package no longer contains an empty `tools/` directory.
+
 # gambitR3D 0.1.0
 
 First release: a companion to gambitR for an experimental multilevel chess
