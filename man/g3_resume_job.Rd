@@ -19,23 +19,18 @@ first; the job function receives \code{ctx$resume = TRUE} and continues from
 its last complete checkpoint where it supports that.
 }
 \examples{
-\donttest{
-# The job runs in a supervised background R process; it is cancelled,
-# resumed as a second attempt and cancelled again.
-if (requireNamespace("callr", quietly = TRUE)) {
-  job_dir <- base::file.path(base::tempdir(), "g3-jobs")
+# Interactive only: the job runs in a supervised background R process.
+# It is cancelled, resumed as a second attempt and cancelled again.
+if (interactive() && requireNamespace("callr", quietly = TRUE)) {
   st <- gambitR3D::g3_new_game()$state
   job <- gambitR3D::g3_start_job(base::list(
     type = "search",
     args = base::list(state = st,
                       budget = base::list(nodes = 1000000L, time_ms = 60000)),
-    job_dir = job_dir
+    job_dir = base::file.path(base::tempdir(), "g3-jobs")
   ))
-  print(gambitR3D::g3_cancel_job(job)$status)
+  gambitR3D::g3_cancel_job(job)$status
   job2 <- gambitR3D::g3_resume_job(job)
-  print(job2$attempt)
-  print(gambitR3D::g3_cancel_job(job2)$status)
-  base::unlink(job_dir, recursive = TRUE)
-}
+  gambitR3D::g3_cancel_job(job2)$status
 }
 }

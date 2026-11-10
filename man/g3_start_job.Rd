@@ -28,19 +28,14 @@ stop it and \code{\link[=g3_resume_job]{g3_resume_job()}} to continue an interru
 resumable job.
 }
 \examples{
-\donttest{
-# The job runs in a supervised background R process.
-if (requireNamespace("callr", quietly = TRUE)) {
-  job_dir <- base::file.path(base::tempdir(), "g3-jobs")
+# Interactive only: the job runs in a supervised background R process.
+if (interactive() && requireNamespace("callr", quietly = TRUE)) {
   st <- gambitR3D::g3_new_game()$state
   job <- gambitR3D::g3_start_job(base::list(
     type = "search",
     args = base::list(state = st, budget = base::list(nodes = 300L)),
-    job_dir = job_dir
+    job_dir = base::file.path(base::tempdir(), "g3-jobs")
   ))
-  print(gambitR3D::g3_job_status(job)$status)
-  print(gambitR3D::g3_cancel_job(job)$outcome)
-  base::unlink(job_dir, recursive = TRUE)
-}
+  gambitR3D::g3_job_status(job)$status
 }
 }

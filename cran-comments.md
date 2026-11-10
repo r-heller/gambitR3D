@@ -36,11 +36,13 @@ The check also reports two INFO lines, which are not NOTEs:
 * The optional model features drive an isolated Python/PyTorch worker that the
   user has to set up explicitly with `g3_setup_ml()`. The examples of those
   functions are in `\dontrun{}` because they need that environment and a
-  trained checkpoint; the corresponding tests and the training vignette run
-  only when such an environment is configured.
-* The examples of `g3_run_app()`, `g3_start_job()` and `g3_job_status()` run
-  only in interactive sessions: the app opens a browser, and a job runs in a
-  supervised background R process whose 'processx' supervisor connections
+  trained checkpoint (`g3_compare_models()` also runs a comparison of the
+  built-in agents, which needs neither); the corresponding tests and the
+  training vignette run only when such an environment is configured.
+* The examples of `g3_run_app()` and of the job functions (`g3_start_job()`,
+  `g3_job_status()`, `g3_job_result()`, `g3_cancel_job()`, `g3_resume_job()`)
+  run only in interactive sessions: the app opens a browser, and a job runs in
+  a supervised background R process whose 'processx' supervisor connections
   outlive a non-interactive example.
 * Background jobs, the app and the database write only to paths the user
   passes, or by default to `tools::R_user_dir("gambitR3D", "data")`.
