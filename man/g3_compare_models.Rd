@@ -44,6 +44,13 @@ records truncation (never a draw), completed-game scores with
 scheduled-game bounds and grouped bootstrap intervals.
 }
 \examples{
+# Built-in agents need no ML environment: one colour-swapped pair from
+# the start, capped at six plies.
+cmp <- gambitR3D::g3_compare_models(
+  c(greedy = "greedy", random = "random"), budget = base::list(nodes = 50L),
+  seeds = 1L, pairs = 1L, max_plies = 6L
+)
+cmp$summary[, c("scheduled", "completed", "truncated")]
 \dontrun{
 # Not run: needs the optional Python/PyTorch environment from g3_setup_ml()
 # and a trained checkpoint, which cannot be assumed on a check machine.

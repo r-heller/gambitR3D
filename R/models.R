@@ -474,7 +474,11 @@ g3_model_capabilities <- function(model = NULL) {
 #' \dontrun{
 #' # Not run: needs the optional Python/PyTorch environment from g3_setup_ml()
 #' # and a trained checkpoint, which cannot be assumed on a check machine.
-#' run <- gambitR3D::g3_train_model(base::list(steps = 5L), dataset, tempfile())
+#' run <- gambitR3D::g3_train_model(
+#'   base::list(profile = "tiny", steps = 5L),
+#'   dataset = base::list(games = 4L, positions = 40L),
+#'   output_dir = base::file.path(base::tempdir(), "g3-run")
+#' )
 #' m <- gambitR3D::g3_register_model(run$checkpoint$manifest)
 #' gambitR3D::g3_model_capabilities(m)
 #' }
