@@ -57,15 +57,20 @@
 #' @return A `g3_job` handle: `job_id`, `attempt`, `dir`, `type` and the
 #'   process handle (valid only in the starting session).
 #' @examples
-#' # Interactive only: the job runs in a supervised background R process.
-#' if (interactive() && requireNamespace("callr", quietly = TRUE)) {
+#' \donttest{
+#' # The job runs in a supervised background R process.
+#' if (requireNamespace("callr", quietly = TRUE)) {
+#'   job_dir <- base::file.path(base::tempdir(), "g3-jobs")
 #'   st <- gambitR3D::g3_new_game()$state
 #'   job <- gambitR3D::g3_start_job(base::list(
 #'     type = "search",
 #'     args = base::list(state = st, budget = base::list(nodes = 300L)),
-#'     job_dir = base::file.path(base::tempdir(), "g3-jobs")
+#'     job_dir = job_dir
 #'   ))
-#'   gambitR3D::g3_job_status(job)$status
+#'   print(gambitR3D::g3_job_status(job)$status)
+#'   print(gambitR3D::g3_cancel_job(job)$outcome)
+#'   base::unlink(job_dir, recursive = TRUE)
+#' }
 #' }
 #' @export
 g3_start_job <- function(spec) {
@@ -238,20 +243,24 @@ g3_start_job <- function(spec) {
 #'   readable with [g3_job_result()]). A job whose process has died while
 #'   marked running is reported as `"interrupted"`.
 #' @examples
-#' # Interactive only: the job runs in a supervised background R process.
-#' if (interactive() && requireNamespace("callr", quietly = TRUE)) {
+#' \donttest{
+#' # The job runs in a supervised background R process.
+#' if (requireNamespace("callr", quietly = TRUE)) {
+#'   job_dir <- base::file.path(base::tempdir(), "g3-jobs")
 #'   st <- gambitR3D::g3_new_game()$state
 #'   job <- gambitR3D::g3_start_job(base::list(
 #'     type = "search",
 #'     args = base::list(state = st, budget = base::list(nodes = 300L)),
-#'     job_dir = base::file.path(base::tempdir(), "g3-jobs")
+#'     job_dir = job_dir
 #'   ))
 #'   deadline <- Sys.time() + 30
 #'   while (gambitR3D::g3_job_status(job)$status %in% c("queued", "running") &&
 #'          Sys.time() < deadline) {
 #'     Sys.sleep(0.2)
 #'   }
-#'   gambitR3D::g3_job_status(job)$status
+#'   print(gambitR3D::g3_job_status(job)$status)
+#'   base::unlink(job_dir, recursive = TRUE)
+#' }
 #' }
 #' @export
 g3_job_status <- function(job) {
@@ -330,6 +339,27 @@ g3_job_status <- function(job) {
 #' @param job A `g3_job` or job directory.
 #' @return The value returned by the job function for the latest attempt,
 #'   or `NULL` if no result has been written.
+#' @examples
+#' \donttest{
+#' # The job runs in a supervised background R process.
+#' if (requireNamespace("callr", quietly = TRUE)) {
+#'   job_dir <- base::file.path(base::tempdir(), "g3-jobs")
+#'   st <- gambitR3D::g3_new_game()$state
+#'   job <- gambitR3D::g3_start_job(base::list(
+#'     type = "search",
+#'     args = base::list(state = st, budget = base::list(nodes = 300L)),
+#'     job_dir = job_dir
+#'   ))
+#'   deadline <- Sys.time() + 30
+#'   while (gambitR3D::g3_job_status(job)$status %in% c("queued", "running") &&
+#'          Sys.time() < deadline) {
+#'     Sys.sleep(0.2)
+#'   }
+#'   res <- gambitR3D::g3_job_result(job)
+#'   print(res$label)
+#'   base::unlink(job_dir, recursive = TRUE)
+#' }
+#' }
 #' @export
 g3_job_result <- function(job) {
   st <- g3_job_status(job)
@@ -353,6 +383,24 @@ g3_job_result <- function(job) {
 #' @param grace_seconds Seconds to wait before terminating the process.
 #' @return A list: `job_id`, `requested_at`, `outcome` (`"stopped"`,
 #'   `"terminated"`, `"requested"` or `"already_finished"`), `status`.
+#' @examples
+#' \donttest{
+#' # The job runs in a supervised background R process; its search budget
+#' # is far larger than needed, so it is stopped early.
+#' if (requireNamespace("callr", quietly = TRUE)) {
+#'   job_dir <- base::file.path(base::tempdir(), "g3-jobs")
+#'   st <- gambitR3D::g3_new_game()$state
+#'   job <- gambitR3D::g3_start_job(base::list(
+#'     type = "search",
+#'     args = base::list(state = st,
+#'                       budget = base::list(nodes = 1000000L, time_ms = 60000)),
+#'     job_dir = job_dir
+#'   ))
+#'   ack <- gambitR3D::g3_cancel_job(job, wait = TRUE)
+#'   print(ack[c("outcome", "status")])
+#'   base::unlink(job_dir, recursive = TRUE)
+#' }
+#' }
 #' @export
 g3_cancel_job <- function(job, wait = TRUE, grace_seconds = 5) {
   dir <- .g3_job_dir(job)
@@ -398,6 +446,26 @@ g3_cancel_job <- function(job, wait = TRUE, grace_seconds = 5) {
 #'
 #' @param job A `g3_job` or job directory.
 #' @return A new `g3_job` handle for the next attempt of the same job.
+#' @examples
+#' \donttest{
+#' # The job runs in a supervised background R process; it is cancelled,
+#' # resumed as a second attempt and cancelled again.
+#' if (requireNamespace("callr", quietly = TRUE)) {
+#'   job_dir <- base::file.path(base::tempdir(), "g3-jobs")
+#'   st <- gambitR3D::g3_new_game()$state
+#'   job <- gambitR3D::g3_start_job(base::list(
+#'     type = "search",
+#'     args = base::list(state = st,
+#'                       budget = base::list(nodes = 1000000L, time_ms = 60000)),
+#'     job_dir = job_dir
+#'   ))
+#'   print(gambitR3D::g3_cancel_job(job)$status)
+#'   job2 <- gambitR3D::g3_resume_job(job)
+#'   print(job2$attempt)
+#'   print(gambitR3D::g3_cancel_job(job2)$status)
+#'   base::unlink(job_dir, recursive = TRUE)
+#' }
+#' }
 #' @export
 g3_resume_job <- function(job) {
   dir <- .g3_job_dir(job)

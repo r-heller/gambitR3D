@@ -16,3 +16,25 @@ or \code{NULL} if no result has been written.
 \description{
 Read a finished job's result
 }
+\examples{
+\donttest{
+# The job runs in a supervised background R process.
+if (requireNamespace("callr", quietly = TRUE)) {
+  job_dir <- base::file.path(base::tempdir(), "g3-jobs")
+  st <- gambitR3D::g3_new_game()$state
+  job <- gambitR3D::g3_start_job(base::list(
+    type = "search",
+    args = base::list(state = st, budget = base::list(nodes = 300L)),
+    job_dir = job_dir
+  ))
+  deadline <- Sys.time() + 30
+  while (gambitR3D::g3_job_status(job)$status \%in\% c("queued", "running") &&
+         Sys.time() < deadline) {
+    Sys.sleep(0.2)
+  }
+  res <- gambitR3D::g3_job_result(job)
+  print(res$label)
+  base::unlink(job_dir, recursive = TRUE)
+}
+}
+}

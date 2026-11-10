@@ -24,3 +24,22 @@ Requests a cooperative stop at the job's next safe point. If
 process tree. The returned acknowledgement says what actually happened;
 it never claims a stop that has not occurred.
 }
+\examples{
+\donttest{
+# The job runs in a supervised background R process; its search budget
+# is far larger than needed, so it is stopped early.
+if (requireNamespace("callr", quietly = TRUE)) {
+  job_dir <- base::file.path(base::tempdir(), "g3-jobs")
+  st <- gambitR3D::g3_new_game()$state
+  job <- gambitR3D::g3_start_job(base::list(
+    type = "search",
+    args = base::list(state = st,
+                      budget = base::list(nodes = 1000000L, time_ms = 60000)),
+    job_dir = job_dir
+  ))
+  ack <- gambitR3D::g3_cancel_job(job, wait = TRUE)
+  print(ack[c("outcome", "status")])
+  base::unlink(job_dir, recursive = TRUE)
+}
+}
+}
