@@ -32,6 +32,13 @@
 #'   `provenance$models` listing each model's id, kind, weights digest and
 #'   play settings.
 #' @examples
+#' # Built-in agents need no ML environment: one colour-swapped pair from
+#' # the start, capped at six plies.
+#' cmp <- gambitR3D::g3_compare_models(
+#'   c(greedy = "greedy", random = "random"), budget = base::list(nodes = 50L),
+#'   seeds = 1L, pairs = 1L, max_plies = 6L
+#' )
+#' cmp$summary[, c("scheduled", "completed", "truncated")]
 #' \dontrun{
 #' # Not run: needs the optional Python/PyTorch environment from g3_setup_ml()
 #' # and a trained checkpoint, which cannot be assumed on a check machine.
@@ -102,8 +109,11 @@ g3_compare_models <- function(models, positions = NULL, budget = list(nodes = 20
   if (identical(kind, "held_out")) {
     return(.g3_ml_evaluate_split(args$model, args$dataset, args$split %||% "validation", args$ml_env))
   }
-  if (!is.null(args$ml_env)) options(gambitR3D.ml_env = args$ml_env)
-  if (!is.null(args$registry_dir)) options(gambitR3D.registry_dir = args$registry_dir)
+  op <- options(
+    gambitR3D.ml_env = args$ml_env %||% getOption("gambitR3D.ml_env"),
+    gambitR3D.registry_dir = args$registry_dir %||% getOption("gambitR3D.registry_dir")
+  )
+  on.exit(options(op), add = TRUE)
   out <- g3_compare_models(
     args$models, positions = args$positions, budget = args$budget %||% list(nodes = 2000L),
     seeds = args$seeds %||% 1L, play = args$play %||% list(), pairs = args$pairs %||% 1L,
