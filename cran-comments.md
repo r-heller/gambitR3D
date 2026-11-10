@@ -22,7 +22,8 @@ The check also reports two INFO lines, which are not NOTEs:
 ## Test environments
 
 * local: macOS (aarch64), R 4.6.1, `R CMD check --as-cran --no-manual`
-  (no LaTeX installation locally, so the PDF manual was not built)
+  (the PDF manual was built locally with TinyTeX (TeX Live 2026) via
+  `R CMD Rd2pdf` without errors; the check run itself used `--no-manual`)
 * GitHub Actions (r-lib/actions v2):
   * macos-latest (R release)
   * windows-latest (R release)
