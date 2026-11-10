@@ -2,8 +2,8 @@ Package: gambitR3D
 Title: Multilevel Chess: Play, Analyse and Train
 Version: 0.2.0
 Authors@R: c(
-    person("Raban", "Heller", email = "raban.heller@uni-ulm.de",
-           role = c("aut", "cre"), comment = c(ORCID = "0000-0001-8006-9742")),
+    person("R.", "Heller", email = "raban.heller@uni-ulm.de",
+           role = c("aut", "cre", "cph"), comment = c(ORCID = "0000-0001-8006-9742")),
     person("three.js authors", role = c("ctb", "cph"),
            comment = "bundled three.js library, see inst/app/www/vendor/PROVENANCE.md")
   )
