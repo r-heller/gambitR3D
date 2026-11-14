@@ -17,6 +17,18 @@ for (package in c("testthat", "processx", "callr", "withr", "jsonlite")) {
   if (!requireNamespace(package, quietly = TRUE)) stop("Missing ML test dependency: ", package)
 }
 if (!nzchar(Sys.which("uv")) || !nzchar(Sys.which("python"))) stop("Pinned uv and Python3.12 must be available.")
+# The Linux R launcher can prepend system library directories. Preserve the
+# caller's setup-python loader path for child processes so its interpreter and
+# extension modules use the same libpython instead of Ubuntu's older one.
+loader_path <- Sys.getenv("G3_ML_LD_LIBRARY_PATH", unset = NA_character_)
+if (!is.na(loader_path)) Sys.setenv(LD_LIBRARY_PATH = loader_path)
+python_probe <- processx::run(Sys.which("python"), c("-I", "-c",
+  "import ctypes, json, sys; print(json.dumps({'executable': sys.executable, 'version': sys.version.split()[0]}))"))
+python_identity <- jsonlite::fromJSON(python_probe$stdout)
+expected_python <- Sys.getenv("G3_ML_PYTHON_VERSION")
+if (nzchar(expected_python) && !identical(python_identity$version, expected_python)) {
+  stop("The Python child runtime differs from the selected interpreter: ", python_identity$version)
+}
 dir.create(base, recursive = TRUE, showWarnings = FALSE)
 runtime <- tempfile("run-", tmpdir = normalizePath(base))
 dir.create(runtime)
@@ -28,6 +40,7 @@ Sys.setenv(R_USER_DATA_DIR = file.path(runtime, "data"),
            G3_ML_ENV = file.path(runtime, "python"))
 cat("Installed package:", expected, "\nEvidence:", runtime, "\n")
 capture.output(sessionInfo(), file = file.path(runtime, "session-info.txt"))
+writeLines(python_probe$stdout, file.path(runtime, "python-identity.json"))
 setup <- g3_setup_ml(Sys.getenv("G3_ML_ENV"), python = Sys.which("python"))
 saveRDS(setup, file.path(runtime, "setup.rds"))
 jsonlite::write_json(unclass(setup), file.path(runtime, "setup.json"), auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null")

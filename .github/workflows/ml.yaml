@@ -57,6 +57,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          export G3_ML_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+          G3_ML_PYTHON_VERSION="$(python -I -c 'import ctypes, sys; print(sys.version.split()[0])')"
+          export G3_ML_PYTHON_VERSION
           Rscript --vanilla tools/check-ml.R 2>&1 | tee "$GAMBITR3D_ML_DIR/qualification.log"
       - name: Retain qualification evidence
         if: always()
@@ -67,6 +70,7 @@ jobs:
             ${{ runner.temp }}/gambit-ml-evidence/qualification.log
             ${{ runner.temp }}/gambit-ml-evidence/run-*/setup.json
             ${{ runner.temp }}/gambit-ml-evidence/run-*/session-info.txt
+            ${{ runner.temp }}/gambit-ml-evidence/run-*/python-identity.json
             ${{ runner.temp }}/gambit-ml-evidence/run-*/results.csv
             ${{ runner.temp }}/gambit-ml-evidence/run-*/results.rds
             ${{ runner.temp }}/gambit-ml-evidence/run-*/python/gambitr3d-ml.json
