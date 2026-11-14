@@ -37,6 +37,7 @@ Sys.setenv(R_USER_DATA_DIR = file.path(runtime, "data"),
            R_USER_CONFIG_DIR = file.path(runtime, "config"),
            R_USER_CACHE_DIR = file.path(runtime, "cache"),
            G3_MODEL_REGISTRY = file.path(runtime, "registry"),
+           G3_ML_TEST_EVIDENCE = file.path(runtime, "test-evidence"),
            G3_ML_ENV = file.path(runtime, "python"))
 cat("Installed package:", expected, "\nEvidence:", runtime, "\n")
 capture.output(sessionInfo(), file = file.path(runtime, "session-info.txt"))

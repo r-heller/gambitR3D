@@ -303,13 +303,37 @@ test_that("a training job can be cancelled and resumed from its checkpoint", {
   cfg <- list(steps = 20L, batch_size = 48L, chunk_steps = 20L, ml_env = env, registry_dir = file.path(dir, "reg"))
   job <- g3_start_job(list(type = "training", job_dir = file.path(dir, "jobs"),
                            args = list(config = cfg, dataset = ds$manifest_path, output_dir = out)))
+  evidence_root <- Sys.getenv("G3_ML_TEST_EVIDENCE")
+  evidence <- if (nzchar(evidence_root)) {
+    dir.create(evidence_root, recursive = TRUE, showWarnings = FALSE)
+    tempfile("cancel-resume-", tmpdir = evidence_root)
+  } else NULL
+  retain_job <- function(label) {
+    if (is.null(evidence)) return(invisible(NULL))
+    destination <- file.path(evidence, label)
+    dir.create(destination, recursive = TRUE, showWarnings = FALSE)
+    for (name in c("job.json", "status.json", "log.txt")) {
+      path <- file.path(job$dir, name)
+      if (file.exists(path)) file.copy(path, file.path(destination, name))
+    }
+  }
+  withr::defer({
+    retain_job("exit")
+    if (job$process$is_alive()) g3_cancel_job(job, wait = TRUE, grace_seconds = 15)
+  })
   t0 <- Sys.time()
   repeat {
     s <- g3_job_status(job)
     if (isTRUE(s$progress$done >= 2) || s$status %in% .G3_JOB_TERMINAL || Sys.time() - t0 > 120) break
     Sys.sleep(0.05)
   }
-  skip_if(s$status %in% .G3_JOB_TERMINAL, "the job finished before it could be cancelled")
+  retain_job("before-cancellation")
+  if (s$status %in% .G3_JOB_TERMINAL || !isTRUE(s$progress$done >= 2)) {
+    log <- file.path(job$dir, "log.txt")
+    details <- if (file.exists(log)) paste(tail(readLines(log, warn = FALSE), 40L), collapse = "\n") else "No job log."
+    stop("Training did not reach cancellable progress: status=", s$status,
+         "; error=", s$error, "; progress=", s$progress$done, "\n", details)
+  }
   ack <- g3_cancel_job(job, wait = TRUE, grace_seconds = 15)
   expect_identical(ack$outcome, "stopped")
   job$process$wait(10000)
@@ -320,7 +344,9 @@ test_that("a training job can be cancelled and resumed from its checkpoint", {
   expect_identical(r1$status, "cancelled")
   expect_lt(r1$steps$end, 20L)
   expect_true(file.exists(file.path(r1$checkpoint$path, "checkpoint.json")))
+  retain_job("after-cancellation")
   job2 <- g3_resume_job(job)
+  withr::defer(if (job2$process$is_alive()) g3_cancel_job(job2, wait = TRUE, grace_seconds = 15))
   t0 <- Sys.time()
   repeat {
     s <- g3_job_status(job2)
