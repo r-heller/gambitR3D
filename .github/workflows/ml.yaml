@@ -1,0 +1,74 @@
+name: CPU model training
+on:
+  pull_request:
+    paths: ['R/**', 'src/**', 'inst/**', 'data/**', '.Rbuildignore', 'tests/**', 'DESCRIPTION', 'NAMESPACE', 'tools/check-ml.R', '.github/workflows/ml.yaml']
+  push:
+    branches: [main]
+    paths: ['R/**', 'src/**', 'inst/**', 'data/**', '.Rbuildignore', 'tests/**', 'DESCRIPTION', 'NAMESPACE', 'tools/check-ml.R', '.github/workflows/ml.yaml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cpu-ml-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  cpu-training:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NOT_CRAN: 'true'
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      MAKEFLAGS: '-j1'
+    steps:
+      - name: Select isolated runtime paths
+        shell: bash
+        run: |
+          echo "GAMBITR3D_APP_LIB=$RUNNER_TEMP/gambit-library" >> "$GITHUB_ENV"
+          echo "GAMBITR3D_ML_DIR=$RUNNER_TEMP/gambit-ml-evidence" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install the lock resolver
+        run: python -m pip install uv==0.11.26
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
+        with:
+          r-version: '4.6.1'
+          use-public-rspm: true
+          install-quarto: false
+          install-pandoc: false
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
+        with:
+          dependencies: '"hard"'
+          extra-packages: |
+            any::testthat
+            any::withr
+            any::callr
+            any::processx
+      - name: Install the exact source and tests
+        run: |
+          mkdir -p "$GAMBITR3D_APP_LIB" "$GAMBITR3D_ML_DIR"
+          R CMD INSTALL --install-tests --library="$GAMBITR3D_APP_LIB" .
+      - name: Qualify the locked CPU worker and training lifecycle
+        shell: bash
+        run: |
+          set -o pipefail
+          Rscript --vanilla tools/check-ml.R 2>&1 | tee "$GAMBITR3D_ML_DIR/qualification.log"
+      - name: Retain qualification evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: cpu-ml-evidence
+          path: |
+            ${{ runner.temp }}/gambit-ml-evidence/qualification.log
+            ${{ runner.temp }}/gambit-ml-evidence/run-*/setup.json
+            ${{ runner.temp }}/gambit-ml-evidence/run-*/session-info.txt
+            ${{ runner.temp }}/gambit-ml-evidence/run-*/results.csv
+            ${{ runner.temp }}/gambit-ml-evidence/run-*/results.rds
+            ${{ runner.temp }}/gambit-ml-evidence/run-*/python/gambitr3d-ml.json
+            ${{ runner.temp }}/gambit-ml-evidence/run-*/python/setup-log.txt
+          if-no-files-found: error
