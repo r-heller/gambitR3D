@@ -30,7 +30,13 @@ app_dir <- function(storage, envir = parent.frame(), app_args = "") {
   lib <- Sys.getenv("GAMBITR3D_APP_LIB")
   src <- normalizePath(testthat::test_path("..", ".."), mustWork = FALSE)
   loader <- if (nzchar(lib)) {
-    sprintf(".libPaths(c(%s, .libPaths())); library(gambitR3D)", deparse(lib))
+    # shinytest2 overrides unqualified library() for development packages.
+    # Explicit installed mode must load and verify the requested binary package.
+    sprintf(paste0(
+      ".libPaths(c(%s, .libPaths())); base::library(gambitR3D, lib.loc = %s); ",
+      "stopifnot(identical(normalizePath(getNamespaceInfo(asNamespace('gambitR3D'), 'path')), ",
+      "normalizePath(file.path(%s, 'gambitR3D'))))"
+    ), deparse(lib), deparse(lib), deparse(lib))
   } else if (file.exists(file.path(src, "DESCRIPTION"))) {
     sprintf("pkgload::load_all(%s, quiet = TRUE, export_all = FALSE, helpers = FALSE)", deparse(src))
   } else {
@@ -44,6 +50,11 @@ app_dir <- function(storage, envir = parent.frame(), app_args = "") {
 # Each app gets its own fresh headless Chrome, so browser storage and WebGL
 # contexts never leak from one test into the next.
 start_app <- function(width = 1440, height = 1000, envir = parent.frame(), chrome_args = NULL, app_args = "") {
+  if (identical(Sys.getenv("GAMBITR3D_SOFTWARE_WEBGL"), "true")) {
+    # Trusted local fixtures only: allow CPU WebGL on runners without a GPU.
+    chrome_args <- c("--use-gl=angle", "--use-angle=swiftshader-webgl",
+                     "--enable-unsafe-swiftshader", chrome_args)
+  }
   old <- if (chromote::has_default_chromote_object()) chromote::default_chromote_object() else NULL
   cm <- chromote::Chromote$new(browser = chromote::Chrome$new(
     args = c(chromote::default_chrome_args(), chrome_args)
@@ -89,9 +100,23 @@ mouse_click <- function(app, x, y, modifiers = 0L) {
 }
 
 click_el <- function(app, selector) {
+  sel <- jsonlite::toJSON(selector, auto_unbox = TRUE)
+  # A server acknowledgement can precede the modal fade or layout transition.
+  # Wait for a stable, unobstructed target before dispatching real mouse input.
+  app$wait_for_js(sprintf("!!document.querySelector(%s)", sel), timeout = 10000)
+  app$run_js(sprintf(
+    "document.querySelector(%s).scrollIntoView({block:'center', behavior:'instant'}); window.__g3ClickRect = null;", sel))
+  app$wait_for_js(sprintf("(function(){
+    var e=document.querySelector(%s); if(!e) return false;
+    var r=e.getBoundingClientRect();
+    var x=r.left+r.width/2, y=r.top+r.height/2;
+    var hit=document.elementFromPoint(x,y), previous=window.__g3ClickRect;
+    var current=[r.left,r.top,r.width,r.height]; window.__g3ClickRect=current;
+    return r.width>0 && r.height>0 && !e.disabled && e.contains(hit) && previous &&
+      current.every(function(v,i){return Math.abs(v-previous[i])<0.5;});
+  })()", sel), timeout = 10000)
   r <- unlist(app$get_js(sprintf(
-    "(function(){var e=document.querySelector(%s); e.scrollIntoView({block:'center', behavior:'instant'}); var r=e.getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2];})()",
-    jsonlite::toJSON(selector, auto_unbox = TRUE))))
+    "(function(){var r=document.querySelector(%s).getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2];})()", sel)))
   mouse_click(app, r[1], r[2])
 }
 
@@ -190,6 +215,108 @@ layout_report <- function(app) {
 
 # ----------------------------------------------------------------- tests
 
+test_that("installed browser mode bypasses development-library interception", {
+  browser_ok()
+  lib <- Sys.getenv("GAMBITR3D_APP_LIB")
+  skip_if(!nzchar(lib), "This contract needs GAMBITR3D_APP_LIB.")
+  storage <- withr::local_tempdir()
+  path <- file.path(app_dir(storage), "app.R")
+  loaded <- callr::r(function(path) {
+    assign("library", function(...) stop("Development loader intercepted library()"),
+           envir = globalenv())
+    sys.source(path, envir = new.env(parent = globalenv()))
+    normalizePath(getNamespaceInfo(asNamespace("gambitR3D"), "path"))
+  }, args = list(path = path), libpath = .libPaths())
+  expect_identical(loaded, normalizePath(file.path(lib, "gambitR3D")))
+})
+
+test_that("real clicks wait for delayed and unobstructed targets", {
+  browser_ok()
+  app <- start_app()
+  app$run_js("window.__g3ClickProbe={count:0,trusted:false}; setTimeout(function(){
+    var button=document.createElement('button'); button.id='g3-delayed-click';
+    button.textContent='Delayed target';
+    button.style.cssText='position:fixed;left:100px;top:100px;width:150px;height:50px;z-index:999998';
+    button.addEventListener('click',function(e){
+      window.__g3ClickProbe.count++; window.__g3ClickProbe.trusted=e.isTrusted;
+    }); document.body.appendChild(button);
+    var cover=document.createElement('div'); cover.id='g3-click-cover';
+    cover.style.cssText='position:fixed;left:100px;top:100px;width:150px;height:50px;z-index:999999';
+    document.body.appendChild(cover); setTimeout(function(){cover.remove();},300);
+  },100);")
+  click_el(app, "#g3-delayed-click")
+  expect_equal(app$get_js("window.__g3ClickProbe.count"), 1)
+  expect_true(app$get_js("window.__g3ClickProbe.trusted"))
+  expect_false(app$get_js("!!document.querySelector('#g3-click-cover')"))
+})
+
+test_that("native settings settle without repainting through a held phone click", {
+  browser_ok()
+  app <- start_app(1440, 1000)
+  app$wait_for_js("G3.prefsSynced", timeout = 10000)
+  key <- dbg(app)$position_key
+  click_el(app, ".g3-rail [data-section='settings']")
+  click_el(app, "#settings-theme input[value='dark']")
+  wait_pref(app, "theme", "dark")
+  # Radio and native-select keyboard changes must remain real user actions.
+  app$run_js("document.querySelector('#settings-theme input[value=dark]').focus()")
+  press(app, "ArrowLeft")
+  wait_pref(app, "theme", "light")
+  click_el(app, "#settings-reduced_motion")
+  wait_pref(app, "reduced_motion", TRUE)
+  click_el(app, "#settings-default_view input[value='2d']")
+  wait_pref(app, "default_view", "2d")
+  click_el(app, "#settings-neutral_height input[value='lowest']")
+  wait_pref(app, "neutral_height", "lowest")
+  expect_equal(unlist(app$get_js("Array.from(document.querySelector('#settings-lang').options).map(o=>o.value)")), c("en", "de"))
+  # Tab into the closed native control and use its normal type-ahead. Native
+  # popup menus do not receive renderer arrow events on every Chrome platform.
+  click_el(app, "#settings-neutral_height input[value='lowest']")
+  press(app, "Tab")
+  expect_identical(app$get_js("document.activeElement.id"), "settings-lang")
+  type_initial <- function(letter) {
+    keys <- list(key = letter, code = paste0("Key", toupper(letter)),
+                 windowsVirtualKeyCode = utf8ToInt(toupper(letter)))
+    if (identical(Sys.info()[["sysname"]], "Darwin")) {
+      keys$nativeVirtualKeyCode <- c(d = 2L, e = 14L)[[letter]]
+    }
+    session <- app$get_chromote_session()
+    do.call(session$Input$dispatchKeyEvent, c(list(type = "keyDown", text = letter), keys))
+    do.call(session$Input$dispatchKeyEvent, c(list(type = "keyUp"), keys))
+  }
+  type_initial("d")
+  app$wait_for_js("G3.lang === 'de'", timeout = 10000)
+  # Separate two independent selections rather than typing the prefix "de".
+  Sys.sleep(2)
+  type_initial("e")
+  app$wait_for_js("G3.lang === 'en'", timeout = 10000)
+  expect_identical(dbg(app)$position_key, key)
+  click_el(app, ".g3-rail [data-section='play']")
+  app$set_window_size(width = 320, height = 900)
+  set_pref(app, "view", "2d")
+  app$run_js("window.__prefPaints=0; var b=G3.boards['play-board'], old=b.applyPrefs;
+    b.applyPrefs=function(){window.__prefPaints++; return old.apply(this,arguments);};
+    Shiny.setInputValue('play-board-pref',{name:'theme',value:'dark',nonce:Date.now()},{priority:'event'});")
+  app$wait_for_js("G3.prefs.theme === 'dark' && document.querySelector('#settings-theme input[value=dark]').checked", timeout = 10000)
+  count <- app$get_js("window.__prefPaints")
+  Sys.sleep(1)
+  expect_identical(app$get_js("window.__prefPaints"), count)
+  expect_identical(app$get_js("JSON.parse(localStorage.getItem('gambitR3D.prefs.v1')).theme"), "dark")
+  r <- unlist(app$get_js("(function(){var e=document.querySelector('#play-board .g3-cell[data-square=\"W:2:1\"]');
+    window.__heldCell=e; e.scrollIntoView({block:'center',behavior:'instant'});
+    var r=e.getBoundingClientRect(); return [r.left+r.width/2,r.top+r.height/2];})()"))
+  session <- app$get_chromote_session()
+  session$Input$dispatchMouseEvent(type = "mouseMoved", x = r[1], y = r[2])
+  session$Input$dispatchMouseEvent(type = "mousePressed", x = r[1], y = r[2], button = "left", clickCount = 1L)
+  Sys.sleep(0.5)
+  expect_true(app$get_js("window.__heldCell.isConnected"))
+  session$Input$dispatchMouseEvent(type = "mouseReleased", x = r[1], y = r[2], button = "left", clickCount = 1L)
+  app$wait_for_js("G3.debug.board('play-board').selection === 'W:2:1'", timeout = 10000)
+  expect_identical(dbg(app)$selection, "W:2:1")
+  expect_identical(app$get_js("window.__prefPaints"), count)
+  expect_identical(dbg(app)$position_key, key)
+})
+
 test_that("2D select and move, the same state in 3D, 3D picking and x-ray chooser", {
   browser_ok()
   app <- start_app(1440, 1000)
@@ -209,6 +336,14 @@ test_that("2D select and move, the same state in 3D, 3D picking and x-ray choose
   expect_match(live, "W:c2-N:c4", fixed = TRUE)
   set_pref(app, "view", "3d")
   wait_scene(app)
+  environment <- list(browser = app$get_chromote_session()$Browser$getVersion(),
+    renderer = app$get_js("(function(){var gl=G3.boards['play-board'].scene.renderer.getContext();
+      var ext=gl.getExtension('WEBGL_debug_renderer_info');
+      return gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER);})()"))
+  jsonlite::write_json(environment, evidence("browser-environment.json"), auto_unbox = TRUE, pretty = TRUE)
+  if (identical(Sys.getenv("GAMBITR3D_SOFTWARE_WEBGL"), "true")) {
+    expect_match(environment$renderer, "SwiftShader")
+  }
   d3 <- dbg(app)
   expect_identical(d3$revision, d2$revision)
   expect_identical(d3$position_key, d2$position_key)
@@ -568,7 +703,7 @@ test_that("navigation keeps the game, moves focus, offers More on phones, and sw
   expect_match(app$get_js("document.querySelector('#database-table').textContent"),
                dbg(app)$game_id, fixed = TRUE)
   expect_match(app$get_js("document.querySelector('#models-list').textContent"), "reference only")
-  app$run_js("Shiny.setInputValue('settings-lang', 'de')")
+  app$run_js("Shiny.setInputValue('settings-preference', {name:'lang',value:'de',nonce:Date.now()}, {priority:'event'})")
   app$wait_for_js("document.querySelector('.g3-rail [data-section=\"play\"] .g3-nav-label').textContent === 'Spielen'", timeout = 10000)
   click_el(app, ".g3-rail [data-section='play']")
   app$wait_for_js("document.querySelector('#play-gamebar').textContent.indexOf('Schwarz am Zug') >= 0", timeout = 10000)
@@ -602,7 +737,7 @@ test_that("navigation keeps the game, moves focus, offers More on phones, and sw
   app$wait_for_js("document.documentElement.getAttribute('data-bs-theme') === 'dark' && G3.prefsSynced", timeout = 10000)
   app$run_js("location.reload()")
   Sys.sleep(2)
-  app$wait_for_js("window.G3 && G3.prefsSynced && G3.debug.board('play-board') && G3.debug.board('play-board').revision === 0",
+  app$wait_for_js("window.G3 && G3.prefsSynced && G3.lang === 'de' && G3.debug.board('play-board') && G3.debug.board('play-board').revision === 0",
                   timeout = 60000)
   expect_identical(app$get_js("document.documentElement.getAttribute('data-bs-theme')"), "dark")
   expect_identical(app$get_js("document.querySelector('.g3-bottombar [data-section=\"play\"] .g3-nav-label').textContent"), "Spielen")

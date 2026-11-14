@@ -141,6 +141,25 @@
     root.classList.toggle('g3-reduced-motion', !!p.reduced_motion);
   }
 
+  function bindSettingsPreferences() {
+    document.addEventListener('change', function (event) {
+      // Shiny's programmatic form updates must not become new user actions.
+      if (!event.isTrusted) return;
+      const node = event.target;
+      const settings = node.closest && node.closest('.g3-settings');
+      if (!settings) return;
+      const prefix = settings.getAttribute('data-preference-prefix');
+      const id = node.name || node.id || '';
+      if (!prefix || !id.startsWith(prefix)) return;
+      const name = id.slice(prefix.length);
+      if (!['theme', 'reduced_motion', 'neutral_height', 'default_view', 'lang'].includes(name)) return;
+      setInput(settings.getAttribute('data-preference-input'), {
+        name: name, value: node.type === 'checkbox' ? node.checked : node.value,
+        nonce: Date.now()
+      });
+    });
+  }
+
   function sendClientPrefs() {
     const stored = storeGet() || {};
     const mq = function (q) {
@@ -1263,6 +1282,7 @@
 
   function boot() {
     bindNavigation();
+    bindSettingsPreferences();
     markSection('play');
     document.querySelectorAll('.g3-board').forEach(function (n) { boardFor(n.id); });
     if (window.Shiny && window.Shiny.addCustomMessageHandler) register();

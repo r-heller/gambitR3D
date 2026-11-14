@@ -109,8 +109,12 @@ test_that("presentation changes and section switches keep the game exactly", {
     expect_identical(app$prefs$camera, "black")
     expect_identical(app$prefs$level, "N")
     expect_false(app$prefs$exploded)
-    session$setInputs(`settings-theme` = "dark", `settings-reduced_motion` = TRUE,
-                      `settings-default_view` = "2d", `settings-lang` = "de")
+    for (p in list(list(name = "theme", value = "dark"),
+                   list(name = "reduced_motion", value = TRUE),
+                   list(name = "default_view", value = "2d"),
+                   list(name = "lang", value = "de"))) {
+      session$setInputs(`settings-preference` = p)
+    }
     expect_identical(app$prefs$theme, "dark")
     expect_true(app$prefs$reduced_motion)
     expect_identical(app$prefs$view, "2d")
@@ -300,4 +304,35 @@ test_that("a failing opponent leaves the game playable and says why", {
   expect_true(nzchar(opp$message))
   expect_identical(store$revision, 0L)
   expect_null(opp$job)
+})
+
+test_that("settings echoes and malformed actions cannot overwrite preferences", {
+  dir <- withr::local_tempdir()
+  shiny::testServer(app_server(dir), {
+    session$flushReact()
+    app <- session$userData$g3
+    session$setInputs(`settings-preference` = list(name = "theme", value = "dark"))
+    session$setInputs(`settings-preference` = list(name = "lang", value = "de"))
+    before <- shiny::reactiveValuesToList(app$prefs)
+    game <- app$live$game
+    # Delayed programmatic updates are display echoes, not user actions.
+    for (theme in rep(c("light", "dark"), 5)) {
+      session$setInputs(`settings-theme` = theme, `settings-lang` = "en",
+                        `settings-default_view` = "2d")
+      expect_identical(shiny::reactiveValuesToList(app$prefs), before)
+      expect_identical(app$lang(), "de")
+    }
+    for (p in list(NULL, "dark", list(name = c("theme", "lang"), value = "light"),
+                   list(name = "theme", value = c("light", "dark")),
+                   list(name = "theme", value = list("light")),
+                   list(name = "theme", value = matrix("light")),
+                   list(name = "reduced_motion", value = "true"),
+                   list(name = "lang", value = "missing"),
+                   list(name = "default_view", value = "4d"))) {
+      session$setInputs(`settings-preference` = p)
+      expect_identical(shiny::reactiveValuesToList(app$prefs), before)
+      expect_identical(app$lang(), "de")
+    }
+    expect_identical(app$live$game, game)
+  })
 })

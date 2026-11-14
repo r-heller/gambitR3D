@@ -20,6 +20,7 @@
   }
   htmltools::div(
     class = "g3-section g3-settings",
+    `data-preference-input` = ns("preference"), `data-preference-prefix` = ns(""),
     htmltools::tags$h2(class = "g3-section-title", tabindex = "-1", t("nav.settings")),
     htmltools::p(class = "g3-lead", t("settings.lead")),
     htmltools::div(
@@ -42,7 +43,7 @@
         "settings.language",
         shiny::selectInput(ns("lang"), t("settings.language_label"),
                            choices = stats::setNames(names(.G3_LANGUAGES), unname(.G3_LANGUAGES)),
-                           selected = lang)
+                           selected = lang, selectize = FALSE)
       ),
       card(
         "settings.storage",
@@ -64,20 +65,28 @@
     prefs <- app$prefs
     msg <- shiny::reactiveVal(NULL)
 
-    # Inputs -> preferences.
-    shiny::observeEvent(input$theme, .g3_apply_pref(prefs, "theme", input$theme), ignoreInit = TRUE)
-    shiny::observeEvent(input$reduced_motion, .g3_apply_pref(prefs, "reduced_motion", input$reduced_motion),
-                        ignoreInit = TRUE)
-    shiny::observeEvent(input$neutral_height, .g3_apply_pref(prefs, "neutral_height", input$neutral_height),
-                        ignoreInit = TRUE)
-    shiny::observeEvent(input$default_view, {
-      if (isTRUE(input$default_view %in% c("2d", "3d"))) {
-        prefs$default_view <- input$default_view
-        prefs$view <- input$default_view
+    # Only explicit user actions change preferences. Raw form values also
+    # echo programmatic updates and can otherwise alternate stale values.
+    shiny::observeEvent(input$preference, {
+      p <- input$preference
+      if (!is.list(p) || !is.character(p$name) || length(p$name) != 1L ||
+          !is.null(dim(p$name)) || is.na(p$name)) return()
+      name <- p$name
+      value <- p$value
+      if (length(value) != 1L || !is.null(dim(value)) || is.object(value) ||
+          !(is.character(value) || is.logical(value)) || is.na(value)) return()
+      if (name == "lang") {
+        if (is.character(value) && value %in% names(.G3_LANGUAGES)) app$lang(value)
+      } else if (name == "default_view") {
+        if (is.character(value) && value %in% c("2d", "3d")) {
+          prefs$default_view <- value
+          prefs$view <- value
+        }
+      } else if (name %in% c("theme", "neutral_height", "reduced_motion")) {
+        if (identical(name, "reduced_motion") == is.logical(value)) {
+          .g3_apply_pref(prefs, name, value)
+        }
       }
-    }, ignoreInit = TRUE)
-    shiny::observeEvent(input$lang, {
-      if (isTRUE(input$lang %in% names(.G3_LANGUAGES))) app$lang(input$lang)
     }, ignoreInit = TRUE)
 
     # Preferences -> inputs (the board toolbar can change them too).

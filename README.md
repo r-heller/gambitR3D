@@ -177,8 +177,8 @@ measured on one Linux machine.
   bootstrap intervals over paired starting positions, never Elo.
 - **Models.** A model trained within the smoke limits only shows that the
   pipeline works.
-- **App testing.** The browser tests ran in headless Chrome on Linux. Other
-  browsers, touch devices and screen readers have not been tested.
+- **App testing.** The browser checks use headless Chrome. Other browsers,
+  touch devices and screen readers have not been tested.
 - **Model play.** Each move against a model starts a model worker, which takes
   a few seconds.
 - **Not supported.** The package reads and writes no FEN or PGN, because
@@ -186,9 +186,28 @@ measured on one Linux machine.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Browser tests run with
-`GAMBITR3D_BROWSER_TESTS=true`; model tests need `G3_ML_ENV` pointing at a
-training environment.
+See [CONTRIBUTING.md](CONTRIBUTING.md). The **Runtime qualification** workflow
+runs the installed-package browser, CPU worker and app-state suites on relevant
+pull requests and main changes, and can also be started manually. It fails if a
+required suite is absent, any test skips or has no assertions, or any failure,
+error or warning occurs. Logs, exact source revision, browser/renderer details
+and screenshots are retained as workflow artifacts.
+
+To run the same gate locally with the suggested R packages and Chrome installed:
+
+```sh
+export GAMBITR3D_APP_LIB="$(mktemp -d)"
+R CMD INSTALL --install-tests --library="$GAMBITR3D_APP_LIB" .
+NOT_CRAN=true GAMBITR3D_SLOW_TESTS=true GAMBITR3D_BROWSER_TESTS=true Rscript tools/check-runtime.R
+```
+
+The checker creates fresh synthetic data, configuration and model-registry
+directories and reports their location. Linux CI explicitly enables SwiftShader
+for CPU WebGL on these trusted local fixtures; set `GAMBITR3D_SOFTWARE_WEBGL=true`
+to qualify that renderer locally. This is a browser-test setting, not an app
+runtime setting. Python/PyTorch model tests remain separate and need `G3_ML_ENV`
+pointing at the documented supported training environment. Passing the R-worker
+and browser gate does not qualify Python workers or model playing strength.
 
 ## Licence
 

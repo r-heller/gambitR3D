@@ -1,0 +1,92 @@
+name: Runtime qualification
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'R/**'
+      - 'src/**'
+      - 'inst/app/**'
+      - 'tests/**'
+      - 'tools/check-runtime.R'
+      - 'DESCRIPTION'
+      - 'NAMESPACE'
+      - '.github/workflows/runtime.yaml'
+  pull_request:
+    paths:
+      - 'R/**'
+      - 'src/**'
+      - 'inst/app/**'
+      - 'tests/**'
+      - 'tools/check-runtime.R'
+      - 'DESCRIPTION'
+      - 'NAMESPACE'
+      - '.github/workflows/runtime.yaml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NOT_CRAN: 'true'
+      GAMBITR3D_SLOW_TESTS: 'true'
+      GAMBITR3D_BROWSER_TESTS: 'true'
+      GAMBITR3D_SOFTWARE_WEBGL: 'true'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      VECLIB_MAXIMUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      MAKEFLAGS: '-j1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set isolated runtime paths
+        shell: bash
+        run: |
+          echo "GAMBITR3D_APP_LIB=$RUNNER_TEMP/gambit-runtime-library" >> "$GITHUB_ENV"
+          echo "GAMBITR3D_RUNTIME_DIR=$RUNNER_TEMP/gambit-runtime" >> "$GITHUB_ENV"
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
+        with:
+          dependencies: '"all"'
+      - uses: browser-actions/setup-chrome@48483d551c22a1fe6154c6a195ccc6d5773dc8c4 # v2
+        id: chrome
+        with:
+          chrome-version: stable
+          install-dependencies: true
+      - name: Install this source revision with its tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > runtime-revision.txt
+          mkdir -p "$GAMBITR3D_APP_LIB"
+          R CMD INSTALL --install-tests --library="$GAMBITR3D_APP_LIB" . 2>&1 | tee runtime-install.log
+      - name: Qualify the installed CPU and browser surfaces
+        shell: bash
+        env:
+          CHROMOTE_CHROME: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          set -euo pipefail
+          Rscript --vanilla tools/check-runtime.R 2>&1 | tee runtime-check.log
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: runtime-evidence
+          path: |
+            runtime-revision.txt
+            runtime-install.log
+            runtime-check.log
+            ${{ runner.temp }}/gambit-runtime
+          retention-days: 14

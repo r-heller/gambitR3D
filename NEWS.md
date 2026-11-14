@@ -1,5 +1,14 @@
 # gambitR3D 0.2.0
 
+* Installed-package browser tests now bypass development-package loading and
+  verify the namespace path, so the requested library is actually qualified.
+  Real mouse clicks wait for stable, unobstructed targets during UI transitions.
+
+* Settings now send explicit native user actions separately from programmatic
+  form updates, preventing stale theme values from repeatedly repainting boards
+  and interrupting clicks. The language control uses a native keyboard-accessible
+  select; stored preferences and board controls retain their behavior.
+
 ## CRAN preparation
 
 * Examples that can run on any machine no longer use `\dontrun{}`:

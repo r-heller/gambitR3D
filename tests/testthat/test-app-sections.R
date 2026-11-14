@@ -262,7 +262,7 @@ test_that("invalid training numbers start nothing and say which field is wrong, 
     expect_match(html_of(output$`training-train_msg`), "No ML environment")
     expect_false(grepl("must be a whole number", html_of(output$`training-train_msg`)))
     # Self-play numbers are checked the same way, in German too.
-    session$setInputs(`settings-lang` = "de")
+    session$setInputs(`settings-preference` = list(name = "lang", value = "de"))
     session$setInputs(`training-sp_games` = 1, `training-sp_plies` = NA, `training-sp_sims` = 8,
                       `training-selfplay` = 1)
     expect_match(html_of(output$`training-sp_msg`), "Halbzug.*muss eine ganze Zahl von 4 bis 80 sein")
@@ -358,7 +358,7 @@ test_that("without a catalogue the catalogue actions are refused with the reason
     # The save status names the folder files really go to.
     # (normalised, as the app shows it: /var is /private/var on macOS).
     expect_match(html_of(output$`play-files-status`), file.path(normalizePath(dir), "games"), fixed = TRUE)
-    session$setInputs(`settings-lang` = "de")
+    session$setInputs(`settings-preference` = list(name = "lang", value = "de"))
     expect_match(html_of(output$`database-backup_report`), "Nicht verfügbar", fixed = TRUE)
   })
 })
@@ -383,8 +383,8 @@ test_that("notifications from starting a model game use the session language", {
     app <- session$userData$g3
     notes <- character()
     app$notify <- function(text, type = "message") notes <<- c(notes, text)
-    session$setInputs(`settings-lang` = "en")
-    session$setInputs(`settings-lang` = "de")
+    session$setInputs(`settings-preference` = list(name = "lang", value = "en"))
+    session$setInputs(`settings-preference` = list(name = "lang", value = "de"))
     expect_identical(app$lang(), "de")
     app$start_model_game("any-model")
     expect_length(notes, 1L)
