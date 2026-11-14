@@ -71,6 +71,7 @@ jobs:
             ${{ runner.temp }}/gambit-ml-evidence/run-*/setup.json
             ${{ runner.temp }}/gambit-ml-evidence/run-*/session-info.txt
             ${{ runner.temp }}/gambit-ml-evidence/run-*/python-identity.json
+            ${{ runner.temp }}/gambit-ml-evidence/run-*/child-python-identity.json
             ${{ runner.temp }}/gambit-ml-evidence/run-*/results.csv
             ${{ runner.temp }}/gambit-ml-evidence/run-*/results.rds
             ${{ runner.temp }}/gambit-ml-evidence/run-*/test-evidence/**

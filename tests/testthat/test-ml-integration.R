@@ -316,6 +316,14 @@ test_that("a training job can be cancelled and resumed from its checkpoint", {
       path <- file.path(job$dir, name)
       if (file.exists(path)) file.copy(path, file.path(destination, name))
     }
+    # Python worker stderr belongs to the training output, not the job folder.
+    for (path in list.files(out, pattern = "^worker-.*\\.log$", full.names = TRUE,
+                            recursive = TRUE)) {
+      relative <- substring(path, nchar(out) + 2L)
+      target <- file.path(destination, "training-output", relative)
+      dir.create(dirname(target), recursive = TRUE, showWarnings = FALSE)
+      file.copy(path, target)
+    }
   }
   withr::defer({
     retain_job("exit")
@@ -329,8 +337,14 @@ test_that("a training job can be cancelled and resumed from its checkpoint", {
   }
   retain_job("before-cancellation")
   if (s$status %in% .G3_JOB_TERMINAL || !isTRUE(s$progress$done >= 2)) {
-    log <- file.path(job$dir, "log.txt")
-    details <- if (file.exists(log)) paste(tail(readLines(log, warn = FALSE), 40L), collapse = "\n") else "No job log."
+    logs <- c(file.path(job$dir, "log.txt"),
+              list.files(out, pattern = "^worker-.*\\.log$", full.names = TRUE,
+                         recursive = TRUE))
+    logs <- logs[file.exists(logs)]
+    details <- if (length(logs)) paste(vapply(logs, function(path) {
+      paste(basename(path), paste(tail(readLines(path, warn = FALSE), 40L),
+                                 collapse = "\n"), sep = ":\n")
+    }, character(1)), collapse = "\n") else "No job or worker log."
     stop("Training did not reach cancellable progress: status=", s$status,
          "; error=", s$error, "; progress=", s$progress$done, "\n", details)
   }

@@ -42,6 +42,28 @@ Sys.setenv(R_USER_DATA_DIR = file.path(runtime, "data"),
 cat("Installed package:", expected, "\nEvidence:", runtime, "\n")
 capture.output(sessionInfo(), file = file.path(runtime, "session-info.txt"))
 writeLines(python_probe$stdout, file.path(runtime, "python-identity.json"))
+# Observe the same R-child/Python boundary used by background training jobs.
+# This records failures without altering the child's loader environment or
+# replacing the native lifecycle tests below.
+probe_child_python <- function(python) {
+  tryCatch(callr::r(function(python) {
+    probe <- tryCatch(processx::run(python, c("-I", "-c",
+      paste0("import json, sys; print(json.dumps({'executable': sys.executable, ",
+             "'version': sys.version.split()[0]}), flush=True); import ctypes")),
+      error_on_status = FALSE, timeout = 30),
+      error = function(e) list(error = conditionMessage(e)))
+    list(r_platform = Sys.info()[["sysname"]],
+         loader_path = Sys.getenv("LD_LIBRARY_PATH", unset = NA_character_),
+         requested_python = python,
+         probe = probe[intersect(names(probe), c("status", "stdout", "stderr", "timeout", "error"))])
+  }, args = list(python = python), timeout = 45),
+  error = function(e) list(error = conditionMessage(e)))
+}
+child_python_identity <- list(parent = python_identity,
+                              parent_loader_path = Sys.getenv("LD_LIBRARY_PATH", unset = NA_character_),
+                              child = probe_child_python(Sys.which("python")))
+jsonlite::write_json(child_python_identity, file.path(runtime, "child-python-identity.json"),
+                     auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null")
 setup <- g3_setup_ml(Sys.getenv("G3_ML_ENV"), python = Sys.which("python"))
 saveRDS(setup, file.path(runtime, "setup.rds"))
 jsonlite::write_json(unclass(setup), file.path(runtime, "setup.json"), auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null")
