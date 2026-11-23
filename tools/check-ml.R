@@ -18,8 +18,11 @@ for (package in c("testthat", "processx", "callr", "withr", "jsonlite")) {
 }
 if (!nzchar(Sys.which("uv")) || !nzchar(Sys.which("python"))) stop("Pinned uv and Python3.12 must be available.")
 # The Linux R launcher can prepend system library directories. Preserve the
-# caller's setup-python loader path for child processes so its interpreter and
-# extension modules use the same libpython instead of Ubuntu's older one.
+# caller's setup-python loader path for the processes this script starts
+# directly (the probe below and uv) so its interpreter and extension modules
+# use the same libpython instead of Ubuntu's older one. R child processes,
+# such as background jobs, run the launcher again; there the package itself
+# puts the interpreter's library directory first.
 loader_path <- Sys.getenv("G3_ML_LD_LIBRARY_PATH", unset = NA_character_)
 if (!is.na(loader_path)) Sys.setenv(LD_LIBRARY_PATH = loader_path)
 python_probe <- processx::run(Sys.which("python"), c("-I", "-c",
@@ -42,33 +45,45 @@ Sys.setenv(R_USER_DATA_DIR = file.path(runtime, "data"),
 cat("Installed package:", expected, "\nEvidence:", runtime, "\n")
 capture.output(sessionInfo(), file = file.path(runtime, "session-info.txt"))
 writeLines(python_probe$stdout, file.path(runtime, "python-identity.json"))
-# Observe the same R-child/Python boundary used by background training jobs.
-# This records failures without altering the child's loader environment or
-# replacing the native lifecycle tests below.
-probe_child_python <- function(python) {
-  tryCatch(callr::r(function(python) {
+# Observe the same R-child/Python boundary used by background training jobs:
+# once with the loader path the child inherits from R's launcher (recording,
+# not altering, what it does) and once with the loader environment the
+# package gives every Python process it starts. Neither replaces the native
+# lifecycle tests below.
+probe_child_python <- function(python, package_env = FALSE) {
+  tryCatch(callr::r(function(python, package_env, lib) {
+    libdir <- NA_character_
+    env <- NULL
+    if (package_env) {
+      ns <- loadNamespace("gambitR3D", lib.loc = lib)
+      libdir <- get(".g3_python_libdir", envir = ns)(python)
+      env <- get(".g3_python_env", envir = ns)(libdir)
+    }
     probe <- tryCatch(processx::run(python, c("-I", "-c",
       paste0("import json, sys; print(json.dumps({'executable': sys.executable, ",
              "'version': sys.version.split()[0]}), flush=True); import ctypes")),
-      error_on_status = FALSE, timeout = 30),
+      error_on_status = FALSE, timeout = 30, env = env),
       error = function(e) list(error = conditionMessage(e)))
     list(r_platform = Sys.info()[["sysname"]],
          loader_path = Sys.getenv("LD_LIBRARY_PATH", unset = NA_character_),
          requested_python = python,
+         python_libdir = libdir,
+         python_loader_path = if ("LD_LIBRARY_PATH" %in% names(env)) unname(env[["LD_LIBRARY_PATH"]]) else NA_character_,
          probe = probe[intersect(names(probe), c("status", "stdout", "stderr", "timeout", "error"))])
-  }, args = list(python = python), timeout = 45),
+  }, args = list(python = python, package_env = package_env, lib = lib), timeout = 45),
   error = function(e) list(error = conditionMessage(e)))
 }
 child_python_identity <- list(parent = python_identity,
                               parent_loader_path = Sys.getenv("LD_LIBRARY_PATH", unset = NA_character_),
-                              child = probe_child_python(Sys.which("python")))
+                              child = probe_child_python(Sys.which("python")),
+                              child_package_env = probe_child_python(Sys.which("python"), package_env = TRUE))
 jsonlite::write_json(child_python_identity, file.path(runtime, "child-python-identity.json"),
                      auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null")
 setup <- g3_setup_ml(Sys.getenv("G3_ML_ENV"), python = Sys.which("python"))
 saveRDS(setup, file.path(runtime, "setup.rds"))
 jsonlite::write_json(unclass(setup), file.path(runtime, "setup.json"), auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null")
 if (!identical(setup$status, "ready")) stop("CPU ML environment is not ready: ", setup$reason)
-suites <- c("ml-integration", "ml-train")
+suites <- c("ml-integration", "ml-train", "ml-loader")
 result <- testthat::test_package("gambitR3D", filter = paste0("^(", paste(suites, collapse = "|"), ")$"),
                                  reporter = "summary", stop_on_failure = FALSE)
 saveRDS(result, file.path(runtime, "results.rds"))

@@ -19,7 +19,9 @@ any source repository, for example
 \value{
 A \code{g3_ml_report} list: \code{status} (\code{"ready"} or \code{"blocked"}),
 \code{reason} (\code{NA} when ready), \code{path}, \code{python} (list \code{executable},
-\code{version}), \code{packages} (data frame \code{name}, \code{version}), \code{torch} (list
+\code{version}, \code{libdir}: the directory searched first for the
+interpreter's shared \code{libpython}, \code{NA} when none is needed),
+\code{packages} (data frame \code{name}, \code{version}), \code{torch} (list
 \code{version}, \code{device}, \code{cuda_available}, \code{threads_default}), \code{worker}
 (the handshake reply: protocol and worker versions, feature-schema
 hash, device, dtypes, threads), \code{schema_match} (logical), \code{lock} (list
@@ -42,6 +44,18 @@ packages, and only from the Python Package Index and the official
 PyTorch CPU wheel index. With \code{offline = TRUE} only the local \code{uv} cache
 is used; a missing package then yields a \code{"blocked"} report instead of a
 download.
+
+On Linux, an interpreter linked against a shared \code{libpython} (as the
+Python builds of GitHub Actions are) finds that library through
+\code{LD_LIBRARY_PATH} before its own search path. R's start-up script puts
+R's library directories, often including the system library directory,
+in front of \code{LD_LIBRARY_PATH} in every R process it starts, background
+jobs included, so an older system \code{libpython} of the same name can be
+loaded instead and break the interpreter's extension modules. The setup
+therefore records the directory of the interpreter's own \code{libpython}, and
+every Python process the package starts searches that directory first;
+the rest of \code{LD_LIBRARY_PATH} is kept. Other platforms, and interpreters
+with a built-in \code{libpython}, are unaffected.
 }
 \examples{
 \dontrun{

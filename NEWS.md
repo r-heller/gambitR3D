@@ -1,5 +1,15 @@
 # gambitR3D 0.2.0
 
+* On Linux, the Python worker now always loads its interpreter's own shared
+  `libpython`. R's start-up script puts R's library directories, often
+  including the system one, in front of `LD_LIBRARY_PATH` in background jobs,
+  where an older system `libpython` of the same name could be loaded instead,
+  stopping the worker at start-up (`undefined symbol: _PyErr_SetLocaleString`).
+  `g3_setup_ml()` now records the directory of the interpreter's `libpython`,
+  and every Python process the package starts searches it first; the rest of
+  `LD_LIBRARY_PATH` is kept. Interpreters with a built-in `libpython` and
+  other platforms are unaffected.
+
 * Installed-package browser tests now bypass development-package loading and
   verify the namespace path, so the requested library is actually qualified.
   Real mouse clicks wait for stable, unobstructed targets during UI transitions.

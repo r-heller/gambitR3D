@@ -37,6 +37,18 @@
 #' is used; a missing package then yields a `"blocked"` report instead of a
 #' download.
 #'
+#' On Linux, an interpreter linked against a shared `libpython` (as the
+#' Python builds of GitHub Actions are) finds that library through
+#' `LD_LIBRARY_PATH` before its own search path. R's start-up script puts
+#' R's library directories, often including the system library directory,
+#' in front of `LD_LIBRARY_PATH` in every R process it starts, background
+#' jobs included, so an older system `libpython` of the same name can be
+#' loaded instead and break the interpreter's extension modules. The setup
+#' therefore records the directory of the interpreter's own `libpython`, and
+#' every Python process the package starts searches that directory first;
+#' the rest of `LD_LIBRARY_PATH` is kept. Other platforms, and interpreters
+#' with a built-in `libpython`, are unaffected.
+#'
 #' @param path Directory of the virtual environment. Use a location outside
 #'   any source repository, for example
 #'   `file.path(tools::R_user_dir("gambitR3D", "data"), "ml-env")`.
@@ -45,7 +57,9 @@
 #' @param offline If `TRUE`, never download; use only cached packages.
 #' @return A `g3_ml_report` list: `status` (`"ready"` or `"blocked"`),
 #'   `reason` (`NA` when ready), `path`, `python` (list `executable`,
-#'   `version`), `packages` (data frame `name`, `version`), `torch` (list
+#'   `version`, `libdir`: the directory searched first for the
+#'   interpreter's shared `libpython`, `NA` when none is needed),
+#'   `packages` (data frame `name`, `version`), `torch` (list
 #'   `version`, `device`, `cuda_available`, `threads_default`), `worker`
 #'   (the handshake reply: protocol and worker versions, feature-schema
 #'   hash, device, dtypes, threads), `schema_match` (logical), `lock` (list
@@ -94,7 +108,11 @@ g3_setup_ml <- function(path, python = NULL, offline = FALSE) {
     dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
     args <- c("venv", path, "--python", python %||% .G3_ML_PYTHON, "--no-config")
     if (offline) args <- c(args, "--offline")
-    env <- if (offline) c("current", UV_PYTHON_DOWNLOADS = "never") else NULL
+    # uv runs the requested interpreter to inspect it; give it its own libpython.
+    base_libdir <- if (is.character(python) && length(python) == 1L && !is.na(python) && file.exists(python)) {
+      .g3_python_libdir(python)
+    } else NA_character_
+    env <- .g3_python_env(base_libdir, if (offline) c(UV_PYTHON_DOWNLOADS = "never"))
     r <- .g3_run_logged(uv, args, tmp_log, timeout = 600, env = env)
     if (r$status != 0L || !file.exists(py)) {
       return(blocked(paste0("Creating the virtual environment failed: ", .g3_last_line(r$stderr)), .g3_keep_log(tmp_log)))
@@ -103,12 +121,15 @@ g3_setup_ml <- function(path, python = NULL, offline = FALSE) {
   }
   log <- file.path(path, "setup-log.txt")
   if (file.exists(tmp_log)) file.append(log, tmp_log)
+  # Recorded in the marker, so that later processes (background jobs too)
+  # start the interpreter with its own libpython without asking again.
+  libdir <- .g3_python_libdir(py)
   if (need_install) {
     t0 <- proc.time()[["elapsed"]]
     args <- c("pip", "sync", lock, "--python", py, "--require-hashes",
               "--index-url", .G3_ML_INDEX_URL, "--extra-index-url", .G3_ML_TORCH_INDEX, "--no-config")
     if (offline) args <- c(args, "--offline")
-    r <- .g3_run_logged(uv, args, log, timeout = 3600)
+    r <- .g3_run_logged(uv, args, log, timeout = 3600, env = .g3_python_env(libdir))
     t_install <- proc.time()[["elapsed"]] - t0
     if (r$status != 0L) {
       why <- if (offline) "Offline installation failed (packages missing from the uv cache): " else "Installing the locked packages failed: "
@@ -118,17 +139,17 @@ g3_setup_ml <- function(path, python = NULL, offline = FALSE) {
   }
   # Probe the interpreter and packages.
   t0 <- proc.time()[["elapsed"]]
-  probe <- .g3_ml_probe(py)
+  probe <- .g3_ml_probe(py, libdir)
   t_probe <- proc.time()[["elapsed"]] - t0
   if (!is.null(probe$error)) return(blocked(paste0("The environment probe failed: ", probe$error), log))
   if (!startsWith(probe$python, paste0(.G3_ML_PYTHON, "."))) {
     return(blocked(paste0("The lock targets CPython ", .G3_ML_PYTHON, " but the environment runs ", probe$python, "."), log))
   }
-  pk <- .g3_ml_packages(uv, py, log)
+  pk <- .g3_ml_packages(uv, py, log, libdir)
   # A real protocol handshake with the worker.
   t0 <- proc.time()[["elapsed"]]
   hello <- tryCatch({
-    w <- .g3_worker_start(path, threads = 1L)
+    w <- .g3_worker_start(path, threads = 1L, libdir = libdir)
     h <- w$hello
     .g3_worker_stop(w)
     h
@@ -140,7 +161,7 @@ g3_setup_ml <- function(path, python = NULL, offline = FALSE) {
     created = marker$created %||% .g3_now(),
     updated = .g3_now(),
     path = path,
-    python = list(executable = py, version = probe$python),
+    python = list(executable = py, version = probe$python, libdir = libdir),
     uv = if (is.null(uv)) NA_character_ else .g3_uv_version(uv),
     lock = list(file = basename(lock), sha256 = lock_sha, target = "CPython 3.12, Linux x86_64"),
     packages = pk,
@@ -150,7 +171,7 @@ g3_setup_ml <- function(path, python = NULL, offline = FALSE) {
   .g3_atomic_write(jsonlite::toJSON(marker, auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null"),
                    file.path(path, .G3_ML_MARKER))
   rep <- .g3_ml_report("ready", NA_character_, path, lock, lock_sha, actions, t_start, log = log)
-  rep$python <- list(executable = py, version = probe$python)
+  rep$python <- list(executable = py, version = probe$python, libdir = libdir)
   rep$packages <- data.frame(name = names(pk), version = unname(unlist(pk)), stringsAsFactors = FALSE)
   rep$torch <- list(version = probe$torch, device = "cpu", cuda_available = isTRUE(probe$cuda_available),
                     threads_default = probe$threads_default)
@@ -176,7 +197,7 @@ print.g3_ml_report <- function(x, ...) {
   structure(
     list(
       status = status, reason = reason, path = path,
-      python = list(executable = .g3_venv_python(path), version = NA_character_),
+      python = list(executable = .g3_venv_python(path), version = NA_character_, libdir = NA_character_),
       packages = data.frame(name = character(), version = character(), stringsAsFactors = FALSE),
       torch = list(version = NA_character_, device = NA_character_, cuda_available = NA, threads_default = NA_integer_),
       worker = NULL, schema_match = NA,
@@ -274,8 +295,9 @@ print.g3_ml_report <- function(x, ...) {
 }
 
 #' @noRd
-.g3_ml_probe <- function(py) {
-  r <- tryCatch(processx::run(py, c("-I", "-B", .g3_worker_main(), "--probe"), error_on_status = FALSE, timeout = 300),
+.g3_ml_probe <- function(py, libdir = NA_character_) {
+  r <- tryCatch(processx::run(py, c("-I", "-B", .g3_worker_main(), "--probe"), error_on_status = FALSE, timeout = 300,
+                              env = .g3_python_env(libdir)),
                 error = function(e) list(status = -1L, stdout = "", stderr = conditionMessage(e)))
   if (r$status != 0L) return(list(error = .g3_last_line(r$stderr)))
   out <- tryCatch(jsonlite::fromJSON(.g3_last_line(r$stdout)), error = function(e) NULL)
@@ -284,9 +306,10 @@ print.g3_ml_report <- function(x, ...) {
 }
 
 #' @noRd
-.g3_ml_packages <- function(uv, py, log) {
+.g3_ml_packages <- function(uv, py, log, libdir = NA_character_) {
   if (is.null(uv)) return(list())
-  r <- .g3_run_logged(uv, c("pip", "freeze", "--python", py, "--no-config"), log, timeout = 120)
+  r <- .g3_run_logged(uv, c("pip", "freeze", "--python", py, "--no-config"), log, timeout = 120,
+                      env = .g3_python_env(libdir))
   if (r$status != 0L) return(list())
   l <- strsplit(trimws(r$stdout), "\n", fixed = TRUE)[[1L]]
   l <- l[grepl("==", l, fixed = TRUE)]
@@ -301,6 +324,102 @@ print.g3_ml_report <- function(x, ...) {
   m <- tryCatch(jsonlite::fromJSON(f, simplifyVector = FALSE), error = function(e) NULL)
   if (is.null(m) || !identical(m$schema, .G3_ML_ENV_SCHEMA)) return(NULL)
   m
+}
+
+# Which libpython a Python process loads.
+#
+# On Linux, an interpreter linked against a shared libpython (the GitHub
+# Actions toolcache builds, for example) resolves it through LD_LIBRARY_PATH
+# before its own RUNPATH. R's launcher script (etc/ldpaths) puts R's library
+# directories, often including /usr/lib/<triplet>, in front of
+# LD_LIBRARY_PATH in every R process it starts, callr background jobs
+# included. A distribution libpython of the same soname but an older patch
+# release then shadows the interpreter's own, and extension modules built
+# against the newer one fail to load (`_ctypes`: "undefined symbol:
+# _PyErr_SetLocaleString"). Every Python process the package starts
+# therefore gets the interpreter's own library directory first.
+#
+# The query uses only `sys` and the pure-Python `sysconfig`, so it answers
+# even while the wrong libpython is loaded. It reports the run-time prefix,
+# the build-time LIBDIR, the library's soname and the libpython files the
+# process has mapped (none for a statically linked interpreter).
+.G3_PY_LOADER_QUERY <- paste(
+  "import sys, sysconfig",
+  "print('base_exec_prefix', sys.base_exec_prefix, sep='\\t')",
+  "print('libdir', sysconfig.get_config_var('LIBDIR') or '', sep='\\t')",
+  "print('soname', sysconfig.get_config_var('INSTSONAME') or '', sep='\\t')",
+  "try:",
+  "    with open('/proc/self/maps') as f:",
+  "        maps = f.read().splitlines()",
+  "except OSError:",
+  "    maps = []",
+  "for line in maps:",
+  "    fields = line.split(None, 5)",
+  "    if len(fields) == 6 and '/libpython' in fields[5]:",
+  "        print('mapped', fields[5], sep='\\t')",
+  sep = "\n"
+)
+
+# The directory of the shared libpython belonging to interpreter `py`, or NA
+# when no loader change is needed (not Linux, a statically linked
+# interpreter, or a library that cannot be found).
+#' @noRd
+.g3_python_libdir <- function(py) {
+  if (!identical(Sys.info()[["sysname"]], "Linux") || !is.character(py) || length(py) != 1L ||
+      is.na(py) || !file.exists(py)) {
+    return(NA_character_)
+  }
+  r <- tryCatch(processx::run(py, c("-I", "-S", "-B", "-c", .G3_PY_LOADER_QUERY), error_on_status = FALSE,
+                              timeout = 60),
+                error = function(e) NULL)
+  if (is.null(r) || !identical(r$status, 0L)) return(NA_character_)
+  .g3_python_libdir_from(r$stdout)
+}
+
+#' @noRd
+.g3_python_libdir_from <- function(out) {
+  lines <- strsplit(out %||% "", "\n", fixed = TRUE)[[1L]]
+  lines <- lines[grepl("\t", lines, fixed = TRUE)]
+  key <- sub("\t.*$", "", lines)
+  value <- sub("^[^\t]*\t", "", lines)
+  soname <- value[key == "soname"]
+  if (!any(key == "mapped") || length(soname) != 1L || !nzchar(soname)) return(NA_character_)
+  # The prefix found at run time comes first: a relocated installation still
+  # reports its build-time LIBDIR.
+  cands <- unique(c(file.path(value[key == "base_exec_prefix"], "lib"), value[key == "libdir"]))
+  cands <- cands[nzchar(cands) & file.exists(file.path(cands, soname))]
+  if (!length(cands)) NA_character_ else cands[[1L]]
+}
+
+# The loader directory of an environment's interpreter: as recorded by
+# g3_setup_ml() (null when none is needed), or found now for an environment
+# set up before it was recorded or whose recorded directory has gone.
+#' @noRd
+.g3_ml_libdir <- function(env_path) {
+  py <- .g3_ml_read_marker(env_path)$python
+  if (is.list(py) && "libdir" %in% names(py)) {
+    d <- py$libdir
+    if (is.null(d)) return(NA_character_)
+    if (is.character(d) && length(d) == 1L && !is.na(d) && dir.exists(d)) return(d)
+  }
+  .g3_python_libdir(.g3_venv_python(env_path))
+}
+
+# processx environment for a Python process: the current environment plus
+# the variables in `...`, with `libdir` first on LD_LIBRARY_PATH. The other
+# entries keep their order; empty entries, which would make the loader
+# search the working directory, are dropped. NULL (inherit unchanged) when
+# there is nothing to set.
+#' @noRd
+.g3_python_env <- function(libdir = NA_character_, ..., loader_path = Sys.getenv("LD_LIBRARY_PATH")) {
+  env <- c(...)
+  if (length(libdir) == 1L && !is.na(libdir) && nzchar(libdir)) {
+    rest <- strsplit(loader_path, ":", fixed = TRUE)[[1L]]
+    rest <- rest[nzchar(rest) & rest != libdir]
+    env <- c(env, LD_LIBRARY_PATH = paste(c(libdir, rest), collapse = ":"))
+  }
+  if (!length(env)) return(NULL)
+  c("current", env)
 }
 
 # Locate a configured environment without starting Python. Returns the

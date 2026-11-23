@@ -4,9 +4,11 @@
 # interpreter in isolated mode (`python -I -B .../__main__.py`), with an
 # argument vector, never a shell string. stdin/stdout carry newline-
 # delimited JSON; the worker's stderr goes to a log file and is never
-# parsed. One request is in flight at a time. While waiting, R reads
-# heartbeats, progress and the terminal message (result, error or
-# cancelled) and checks:
+# parsed. On Linux the interpreter's own libpython directory comes first on
+# LD_LIBRARY_PATH, in the foreground and in background jobs alike (see
+# .g3_python_libdir()). One request is in flight at a time. While
+# waiting, R reads heartbeats, progress and the terminal message (result,
+# error or cancelled) and checks:
 #
 #   * every line parses as a JSON object no larger than 8 MiB, otherwise
 #     the worker is killed (malformed or oversized output);
@@ -31,7 +33,8 @@
 #' @noRd
 .g3_worker_start <- function(env_path, threads = 1L, allowed_roots = character(), fault_injection = FALSE,
                              log_path = NULL, stale_s = .G3_STALE_S, heartbeat_s = .G3_HEARTBEAT_S,
-                             startup_timeout = 180, job_id = NULL, attempt_id = NULL) {
+                             startup_timeout = 180, job_id = NULL, attempt_id = NULL,
+                             libdir = .g3_ml_libdir(env_path)) {
   .g3_need_processx()
   py <- .g3_venv_python(env_path)
   if (!file.exists(py)) .g3_abort("g3_incompatible_model", paste0("No Python interpreter in the ML environment ", env_path))
@@ -42,8 +45,8 @@
   args <- c("-I", "-B", .g3_worker_main(), "--threads", threads, "--max-line-bytes", .G3_MAX_LINE_BYTES,
             "--heartbeat", heartbeat_s, as.vector(rbind(rep("--allowed-root", length(roots)), roots)),
             if (fault_injection) "--enable-fault-injection")
-  env <- c("current", OMP_NUM_THREADS = threads, MKL_NUM_THREADS = threads, OPENBLAS_NUM_THREADS = threads,
-           PYTHONHASHSEED = "0", CUDA_VISIBLE_DEVICES = "", PYTHONDONTWRITEBYTECODE = "1")
+  env <- .g3_python_env(libdir, OMP_NUM_THREADS = threads, MKL_NUM_THREADS = threads, OPENBLAS_NUM_THREADS = threads,
+                        PYTHONHASHSEED = "0", CUDA_VISIBLE_DEVICES = "", PYTHONDONTWRITEBYTECODE = "1")
   proc <- processx::process$new(py, as.character(args), stdin = "|", stdout = "|", stderr = log_path,
                                 cleanup = TRUE, cleanup_tree = TRUE, supervise = TRUE, env = env)
   w <- new.env(parent = emptyenv())
